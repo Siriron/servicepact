@@ -7,7 +7,7 @@ The contract is **not deployed**. `CONTRACT_ADDRESS` in `src/config/chains.ts` i
 ## Steps
 
 1. Deploy `contracts/service_pact.py` to StudioNet (studio.genlayer.com, Run and Debug; it has an `__init__` with no arguments).
-2. Put the address in `CONTRACT_ADDRESS` in `src/config/chains.ts`. Set `FIXTURE_REPO`, `FIXTURE_COMMIT` and `REPO_URL` if they are empty (the fixture commit must contain `evidence/fixtures/`).
+2. Put the address in `CONTRACT_ADDRESS` in `src/config/chains.ts`. `FIXTURE_REPO`, `FIXTURE_COMMIT` and `REPO_URL` are already set; the fixture commit contains `evidence/fixtures/`.
 3. `npm install && npm run build`; deploy `dist` to Vercel (`vercel.json` already rewrites to `index.html`).
 4. In Run and Debug, send one adjudication against real commit-pinned files and confirm the leader and validators agree and the stderr is empty.
 

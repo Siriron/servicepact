@@ -8,9 +8,9 @@ export const STUDIONET = {
 } as const
 
 // Set after deploying contracts/service_pact.py to StudioNet. Empty means "not deployed yet".
-export const CONTRACT_ADDRESS = ''
+export const CONTRACT_ADDRESS: string = ''
 
 // Public fixtures used by the in-app test guide (repository + commit that contains evidence/fixtures/*).
-export const FIXTURE_REPO = ''
-export const FIXTURE_COMMIT = ''
-export const REPO_URL = ''
+export const FIXTURE_REPO: string = 'Siriron/servicepact'
+export const FIXTURE_COMMIT: string = 'b9a8247b50f2e911b2779f183cf4de49af3396ea'
+export const REPO_URL: string = 'https://github.com/Siriron/servicepact'
