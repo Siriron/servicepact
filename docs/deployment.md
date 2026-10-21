@@ -2,14 +2,14 @@
 
 ## Status of this repository
 
-The contract is deployed to StudioNet at `0xDFC205f0AB2D2377A898D84A5360A2Baa661F885` (https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885). The explorer shows the constructor transaction FINALIZED with GenVM result SUCCESS. No adjudication or other write has been run against it yet, so live validator consensus and validator access to raw.githubusercontent.com are unconfirmed.
+The contract is deployed to StudioNet at `0xDFC205f0AB2D2377A898D84A5360A2Baa661F885` (https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885). The explorer shows the constructor transaction FINALIZED with GenVM result SUCCESS. Live runs on Oct 21 2026 (driven from the in-app guide, read from the explorer and the engagement page) showed: validators fetched commit-pinned files from raw.githubusercontent.com and reached consensus on three adjudications (GenVM SUCCESS, consensus Accepted); a thin one-line delivery was judged STALLED, a repair resubmission with real content was judged DELIVERED with all six criteria SATISFIED; a delivery stamped for a different engagement id was STALLED by the code-level marker check (replay guard). `release_payment` before DELIVERED reverted as designed. **Not yet observed live:** the `release_payment` and `reclaim_funds` transfers landing at the recipient, and the repair-exhaustion and deadline exits.
 
 ## Steps
 
 1. (Done for the current deployment.) Deploy `contracts/service_pact.py` to StudioNet (studio.genlayer.com, Run and Debug; it has an `__init__` with no arguments).
 2. (Done.) Put the address in `CONTRACT_ADDRESS` in `src/config/chains.ts`. `FIXTURE_REPO`, `FIXTURE_COMMIT` and `REPO_URL` are already set; the fixture commit contains `evidence/fixtures/`.
 3. `npm install && npm run build`; deploy `dist` to Vercel (`vercel.json` already rewrites to `index.html`).
-4. In Run and Debug, send one adjudication against real commit-pinned files and confirm the leader and validators agree and the stderr is empty.
+4. (Done.) One adjudication against real commit-pinned files reached consensus. Still to do: observe a payout and a reclaim end to end.
 
 ## What the tests prove
 

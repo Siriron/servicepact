@@ -100,6 +100,9 @@ export function EngagementPage({ id, account }: { id: string; account: string | 
           {isContractor && eng.state === 'DELIVERED' && <button className="btn btn-primary" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Release payment', functionName: 'release_payment', args: [eng.engagement_id] })}>Release payment</button>}
           {canReclaim && <button className="btn btn-danger" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Reclaim funds', functionName: 'reclaim_funds', args: [eng.engagement_id] })}>Reclaim funds</button>}
         </div>
+        {account && !((isClient && ['DRAFT', 'FUNDED'].includes(eng.state)) || eng.state === 'SUBMITTED' || (isContractor && (eng.state === 'DELIVERED' || canResubmit || (eng.state === 'OPEN' && eng.revision === 0))) || canReclaim) && !['RELEASED', 'RECLAIMED'].includes(eng.state) && (
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>No action is available to the connected wallet in state {eng.state}.{eng.state === 'DELIVERED' ? ' The contractor wallet releases the payment.' : ''}</p>
+        )}
         {eng.state === 'OPEN' && isClient && eng.revision === 0 && now <= eng.deadline_epoch && <p style={{ fontSize: 13, color: 'var(--muted)' }}>Reclaiming opens after the deadline if the contractor never delivers.</p>}
         {eng.state === 'STALLED' && isClient && !canReclaim && <p style={{ fontSize: 13, color: 'var(--muted)' }}>The contractor can still repair until {fmtEpoch(eng.stalled_at + eng.resubmit_window_seconds)} or until the repair budget runs out.</p>}
 

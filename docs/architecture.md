@@ -12,7 +12,7 @@
 |---|---|---|---|
 | raw.githubusercontent.com | `https://raw.githubusercontent.com/<owner>/<repo>/<40-hex commit>/<path>`, derived from (repo, commit, path); no caller URL is accepted | `gl.nondet.web.get` | the text of each SOW, checklist and work-product file |
 
-The host is not in the Gym Sources catalog; run one real adjudication on StudioNet before relying on it.
+The host is not in the Gym Sources catalog. In live StudioNet runs (Oct 21 2026) validators fetched these files and the model's audit notes quoted their contents, so the host is reachable from StudioNet validators.
 
 ## Criteria and outcome rule
 
