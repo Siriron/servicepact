@@ -437,6 +437,7 @@ tests/test_direct.py                 Direct-mode tests that execute the real con
 pytest.ini                           Makes unused test mocks fail the suite
 evidence/fixtures/                   Public documents used by the in-app test guide
 scripts/check_frontend_vs_schema.py  Checks frontend calls against the real ABI
+.github/workflows/ci.yml             Lint + tests + build on every push
 src/                                 React + Vite app (includes /guide and /docs routes)
 docs/                                architecture.md, deployment.md, contracts.md, frontend.md
 LICENSE                              MIT
