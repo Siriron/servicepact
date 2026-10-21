@@ -61,6 +61,30 @@ export class TimeoutError extends Error {
   }
 }
 
+type Rec = Record<string, unknown>
+const asRec = (v: unknown): Rec => (v && typeof v === 'object' ? (v as Rec) : {})
+
+/**
+ * genlayer-js 1.1.x on Studio returns a simplified receipt: statusName is renamed to `status_name`,
+ * and the execution result is not under `txExecutionResultName` but in consensus_data.leader_receipt[0]
+ * (`execution_result`, e.g. SUCCESS). Read all known shapes. ACCEPTED is not success, so an explicit
+ * execution error fails; if the SDK reports no execution result at all, we do not call it a failure and
+ * the callers re-read on-chain state, which is the source of truth.
+ */
+export function interpretReceipt(receipt: unknown): { status: string; execution: string; ok: boolean } {
+  const r = asRec(receipt)
+  const named = r.status_name ?? r.statusName
+  const status = typeof named === 'string' ? named : typeof r.status === 'string' ? r.status : 'UNKNOWN'
+  const consensus = asRec(r.consensus_data)
+  const leader = Array.isArray(consensus.leader_receipt) ? asRec(consensus.leader_receipt[0]) : {}
+  const raw = r.txExecutionResultName ?? leader.execution_result ?? asRec(leader.genvm_result).result_code
+  const execution = typeof raw === 'string' && raw !== '' ? raw : 'UNKNOWN'
+  const e = execution.toUpperCase()
+  const failed = e.includes('ERROR')
+  const undecided = /UNDETERMINED|TIMEOUT|CANCEL/i.test(status)   // own states, never treated as success
+  return { status, execution, ok: !undecided && !failed }
+}
+
 export interface TxOutcome { hash: string; status: string; execution: string; ok: boolean }
 
 export async function writeContract(opts: { functionName: string; args: unknown[]; account: string; value?: bigint }): Promise<TxOutcome> {
@@ -74,10 +98,6 @@ export async function writeContract(opts: { functionName: string; args: unknown[
   } catch {
     throw new TimeoutError(hash)
   }
-  const r = receipt as { statusName?: string; txExecutionResultName?: string }
-  const status = r.statusName ?? 'UNKNOWN'
-  const execution = r.txExecutionResultName ?? 'UNKNOWN'
-  // ACCEPTED is not success: the committee can agree on an execution error. Success needs FINISHED_WITH_RETURN.
-  const ok = (status === 'ACCEPTED' || status === 'FINALIZED') && execution === 'FINISHED_WITH_RETURN'
+  const { status, execution, ok } = interpretReceipt(receipt)
   return { hash, status, execution, ok }
 }

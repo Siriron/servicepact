@@ -15,7 +15,7 @@ export function useActions(account: string | null) {
     const at = new Date().toISOString()
     try {
       const o = await sendWrite({ functionName: fn, args, account, value })
-      setLog((l) => [{ at, action, status: o.status, execution: o.execution, hash: o.hash, note: o.ok ? 'accepted (provisional until finalized)' : 'accepted but the execution did not succeed' }, ...l])
+      setLog((l) => [{ at, action, status: o.status, execution: o.execution, hash: o.hash, note: !o.ok ? 'the execution did not succeed' : o.execution === 'UNKNOWN' ? 'accepted; the SDK reported no execution result, confirm via Refresh' : 'accepted (provisional until finalized)' }, ...l])
       if (!o.ok) setError(`${action}: the transaction was ${o.status} with execution result ${o.execution}. Nothing changed on-chain.`)
       return o.ok
     } catch (e) {
