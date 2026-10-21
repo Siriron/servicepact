@@ -67,7 +67,41 @@ export function GuidePage({ account }: { account: string | null }) {
   }, [sc.work, own])
 
   const ctr = run.contractor.trim()
-  const workText = `# Delivery\n\nengagement:${eid}\ncontractor:${ctr ? ctr.toLowerCase() : '<enter the contractor address above>'}\n\nDelivered items: login page, API client, docs.\n`
+  const workText = [
+    '# Delivery', '',
+    `engagement:${eid}`,
+    `contractor:${ctr ? ctr.toLowerCase() : '<enter the contractor address above>'}`, '',
+    'This delivery contains the three items listed in the statement of work: the login page, the API client module and the README.', '',
+    '## 1. Login page (login.html)', '',
+    '<form id="login" action="/session" method="post">',
+    '  <label for="email">Email</label>',
+    '  <input id="email" name="email" type="email" required>',
+    '  <label for="password">Password</label>',
+    '  <input id="password" name="password" type="password" required minlength="8">',
+    '  <button type="submit">Sign in</button>',
+    '</form>', '',
+    '## 2. API client module (api.js)', '',
+    'const BASE = "/api";', '',
+    'export async function request(path, options) {',
+    '  const init = options || {};',
+    '  const response = await fetch(BASE + path, {',
+    '    method: init.method || "GET",',
+    '    headers: { "Content-Type": "application/json" },',
+    '    body: init.body ? JSON.stringify(init.body) : undefined,',
+    '  });',
+    '  if (!response.ok) {',
+    '    throw new Error("Request to " + path + " failed with status " + response.status);',
+    '  }',
+    '  return response.json();',
+    '}', '',
+    '## 3. README (README.md)', '',
+    'Install: run npm install.',
+    'Run: run npm start and open http://localhost:3000/login.html.',
+    'Test: run npm test.',
+    'Sign in with the account created by npm run seed.',
+    'The API client is imported with: import { request } from "./api.js".',
+    '',
+  ].join('\n')
 
   const call = async (step: Step) => {
     let ok = false
@@ -111,7 +145,7 @@ export function GuidePage({ account }: { account: string | null }) {
 
       {sc.work === 'own' && (
         <Card title="Your delivery file">
-          <p style={{ fontSize: 13, marginTop: 0 }}>Create a public GitHub repo, commit a file with exactly this text, and paste the repo, the full commit SHA and the file path below. (The text depends on the engagement id and the contractor address above.)</p>
+          <p style={{ fontSize: 13, marginTop: 0 }}>Create a public GitHub repo, commit a file with exactly this text, and paste the repo, the full commit SHA and the file path below. (The text depends on the engagement id and the contractor address above.) The validators judge the file's contents against the statement of work, so a one-line claim of delivery is not enough: the file must contain the actual work.</p>
           <pre className="code">{workText}</pre>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
             <input className="input" aria-label="repo" placeholder="owner/repo" value={own.repo} onChange={(e) => setOwn({ ...own, repo: e.target.value })} />
@@ -140,7 +174,8 @@ export function GuidePage({ account }: { account: string | null }) {
                 {active && !done && s.key !== 'wait' && (
                   <div style={{ marginTop: 6 }}>
                     {!walletOk(s.who) && <p style={{ fontSize: 12, color: 'var(--danger)', margin: '0 0 4px' }}>Switch to the {s.who} wallet ({eng ? short(s.who === 'client' ? eng.client : eng.contractor) : ''}).</p>}
-                    <button className="btn btn-primary" disabled={!!act.busy || !account || gated} onClick={() => void call(s)}>{s.label.split(' (')[0]}</button>
+                    <button className="btn btn-primary" disabled={!!act.busy || !account || gated || (s.key === 'release' && eng?.state !== 'DELIVERED')} onClick={() => void call(s)}>{s.label.split(' (')[0]}</button>
+                    {s.key === 'release' && eng && eng.state !== 'DELIVERED' && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>Release is only possible when the outcome is DELIVERED (current state: {eng.state}).</span>}
                     {gated && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>{s.key === 'create' ? 'Enter a valid contractor address first.' : 'Fill in your delivery file details first.'}</span>}
                   </div>
                 )}
@@ -155,6 +190,17 @@ export function GuidePage({ account }: { account: string | null }) {
             <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
               {CRITERION_IDS.map((c) => { const r = eng.adjudication.criteria?.find((x) => x.criterion_id === c); return r ? <li key={c}>{c}: <Chip v={r.status} /></li> : null })}
             </ul>
+          </div>
+        )}
+        {eng && eng.state === 'STALLED' && sc.work === 'own' && (
+          <div style={{ marginTop: 12 }}>
+            {eng.revision <= eng.max_repairs
+              ? <>
+                  <Notice kind="info">The validators could not settle the claim (STALLED), so the contractor can repair within the budget ({eng.revision} of {eng.max_repairs + 1} revisions used). Commit a fuller delivery file, paste its repo, full commit SHA and path in "Your delivery file" above, then resubmit from the contractor wallet.</Notice>
+                  <button className="btn btn-primary" disabled={!!act.busy || !account || !ownReady || !same(account, eng.contractor)} onClick={() => void act.writeContract({ label: 'Resubmit', functionName: 'resubmit_delivery', args: [eid, JSON.stringify(workDocs)] }).then((ok) => { if (ok) void refresh() })}>Resubmit delivery</button>
+                  {!same(account, eng.contractor) && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>Switch to the contractor wallet ({short(eng.contractor)}).</span>}
+                </>
+              : <Notice kind="warn">The repair budget is used up. The client can now reclaim the funds from the engagement page.</Notice>}
           </div>
         )}
         {eng && <p style={{ fontSize: 13 }}>Current on-chain state: <Chip v={eng.state} /></p>}
