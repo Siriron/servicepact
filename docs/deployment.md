@@ -11,6 +11,26 @@ The contract is deployed to StudioNet at `0xDFC205f0AB2D2377A898D84A5360A2Baa661
 3. `npm install && npm run build`; deploy `dist` to Vercel (`vercel.json` already rewrites to `index.html`).
 4. (Done.) One adjudication against real commit-pinned files reached consensus. Still to do: observe a payout and a reclaim end to end.
 
+## Observed live runs (StudioNet, Oct 21 2026)
+
+Driven from the in-app guide; results read from the explorer and the engagement page. All transactions below are GenVM SUCCESS with consensus Accepted unless stated. The DELIVERED adjudication of `g-paid-cua89u` (revision 2, all six criteria SATISFIED) and its repair resubmission are listed on the [contract's explorer page](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885).
+
+| Engagement | Call | Transaction | Result |
+|---|---|---|---|
+| `g-paid-cua89u` | `create_engagement` | [`0x866bca02…`](https://explorer-studio.genlayer.com/tx/0x866bca02ec4fb3d4b468c1271d3cd0c7a7ff5f3744739d12b6c800aa79afb4ee) | returned state DRAFT |
+| `g-paid-cua89u` | `fund_engagement` | [`0x34718868…`](https://explorer-studio.genlayer.com/tx/0x3471886834acaed610fac14a932f30e9b47510ded4f886c411d505bcfb2c8759) | SUCCESS |
+| `g-paid-cua89u` | `open_engagement` | [`0x6c432ec3…`](https://explorer-studio.genlayer.com/tx/0x6c432ec32ec0b310668d70bfdb1752f3770c8f27697e9aa99c41cab77a84baef) | SUCCESS |
+| `g-paid-cua89u` | `submit_delivery` (thin one-line delivery) | [`0x55d41f98…`](https://explorer-studio.genlayer.com/tx/0x55d41f9805f2233ce9d1a8fcbd3a200f82ca8115e8b4de8836101ff8f0b47f2c) | SUCCESS |
+| `g-paid-cua89u` | `adjudicate_engagement` | [`0x6921bd05…`](https://explorer-studio.genlayer.com/tx/0x6921bd05cb825f4217b3e5efc02d86d7c3708cdf282c8f6f0003c77ef127065e) | outcome STALLED (scope, quality, checklist UNRESOLVED) |
+| `g-paid-cua89u` | `release_payment` before DELIVERED | [`0x2ba6d278…`](https://explorer-studio.genlayer.com/tx/0x2ba6d278b7a68d4f5b9a551edb9dc06d0a9e92e03c71cf70c7bbd81ff04556e0) | ERROR, reverted as designed |
+| `g-paid-cua89u` | `release_payment` after DELIVERED | [`0x3637901f…`](https://explorer-studio.genlayer.com/tx/0x3637901f0f38002f555b5f142ef2f42f9478c01e83e2cda4085a91cf45f57650) | FINALIZED, SUCCESS, returned released 1, state RELEASED |
+| `g-paid-feukdu` | `create_engagement` | [`0xe143a039…`](https://explorer-studio.genlayer.com/tx/0xe143a039b89bff5332a92b4e06c629a1d6d13bfbbcd9ef93102aba1bc1b3e6b3) | SUCCESS |
+| `g-paid-feukdu` | `submit_delivery` | [`0xb8f03916…`](https://explorer-studio.genlayer.com/tx/0xb8f03916a47b61a88af73248ab98338ca11aa27aefc2ea60142b0c9e374c6476) | SUCCESS |
+| `g-paid-feukdu` | `adjudicate_engagement` (another engagement's file) | [`0x716502ed…`](https://explorer-studio.genlayer.com/tx/0x716502ed8ba0e20e617c48612c685a2246e752b33adaf400f3714e9a4317c66c) | STALLED: engagement_identity UNRESOLVED (replay guard) |
+| `g-paid-feukdu` | `resubmit_delivery` | [`0xe61c093b…`](https://explorer-studio.genlayer.com/tx/0xe61c093b88bd2fba081f48de3e6a39f05f1d555a863d7bcc063a20258bded435) | SUCCESS |
+
+Not observed live: `reclaim_funds`, the repair-exhaustion exit and the deadline and window exits (covered by the direct-mode tests only).
+
 ## What the tests prove
 
 ```bash
