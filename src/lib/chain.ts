@@ -14,6 +14,9 @@ export const deployed = () => CONTRACT_ADDRESS !== ''
 
 const readClient = () => createClient({ chain: studionet })
 
+// A read of an engagement that does not exist reverts with "engagement not found"; the RPC layer surfaces it as "execution failed".
+export const isNotFound = (e: unknown): boolean => /not found|execution failed/i.test(e instanceof Error ? e.message : String(e))
+
 export function friendly(e: unknown): string {
   const m = e instanceof Error ? e.message : String(e)
   if (/429|-32429|rate/i.test(m)) return 'StudioNet is rate-limiting this connection. Wait a minute, then retry.'

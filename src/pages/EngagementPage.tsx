@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Card, Chip, Notice, Pending, Spinner, TxLog, Field } from '@/components/Bits'
 import { ManifestEditor } from '@/components/ManifestEditor'
-import { deployed, friendly, getEngagement, getPacket } from '@/lib/chain'
+import { deployed, friendly, getEngagement, getPacket, isNotFound } from '@/lib/chain'
 import { addrUrl, fmtEpoch, nowEpoch, rawUrl, same, short } from '@/lib/format'
 import { CRITERION_IDS, CRITERION_LABEL } from '@/lib/types'
 import type { DocRef, Engagement, Packet } from '@/lib/types'
@@ -30,7 +30,7 @@ export function EngagementPage({ id, account }: { id: string; account: string | 
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
-    try { setEng(await getEngagement(id)) } catch (e) { setErr(friendly(e)); setEng(null) } finally { setLoading(false) }
+    try { setEng(await getEngagement(id)) } catch (e) { setErr(isNotFound(e) ? 'Engagement not found.' : friendly(e)); setEng(null) } finally { setLoading(false) }
   }, [id])
   useEffect(() => { if (deployed()) void load(); else setLoading(false) }, [load])
 

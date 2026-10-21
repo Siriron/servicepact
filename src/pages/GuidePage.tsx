@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, Chip, Field, Notice, Pending, TxLog } from '@/components/Bits'
 import { FIXTURE_COMMIT, FIXTURE_REPO } from '@/config/chains'
-import { deployed, friendly, getEngagement } from '@/lib/chain'
+import { deployed, friendly, getEngagement, isNotFound } from '@/lib/chain'
 import { navigate } from '@/lib/router'
 import { nowEpoch, same, short } from '@/lib/format'
 import { CRITERION_IDS, DEFAULT_CRITERIA } from '@/lib/types'
@@ -52,7 +52,7 @@ export function GuidePage({ account }: { account: string | null }) {
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(run)) } catch { /* storage unavailable */ } }, [run])
   const refresh = useCallback(async () => {
     setReadErr(null)
-    try { setEng(await getEngagement(eid)) } catch (e) { const m = friendly(e); setEng(null); if (!/not found/i.test(m)) setReadErr(m) }
+    try { setEng(await getEngagement(eid)) } catch (e) { setEng(null); if (!isNotFound(e)) setReadErr(friendly(e)) }   // not created yet is the normal state of a fresh run
     setTick((t) => t + 1)
   }, [eid])
   useEffect(() => { if (deployed()) void refresh() }, [refresh])
@@ -67,7 +67,7 @@ export function GuidePage({ account }: { account: string | null }) {
   }, [sc.work, own])
 
   const ctr = run.contractor.trim()
-  const workText = `# Delivery\n\nengagement:${eid}\ncontractor:${ctr.toLowerCase()}\n\nDelivered items: login page, API client, docs.\n`
+  const workText = `# Delivery\n\nengagement:${eid}\ncontractor:${ctr ? ctr.toLowerCase() : '<enter the contractor address above>'}\n\nDelivered items: login page, API client, docs.\n`
 
   const call = async (step: Step) => {
     let ok = false
