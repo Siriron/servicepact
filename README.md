@@ -7,7 +7,7 @@
 <img src="https://img.shields.io/badge/Network-StudioNet-00c2a8?style=for-the-badge" alt="Network"/>
 <img src="https://img.shields.io/badge/Tests-100%20Direct%20Mode-22c55e?style=for-the-badge" alt="Tests"/>
 <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="License"/>
-<img src="https://img.shields.io/badge/Status-contract%20not%20deployed-eab308?style=for-the-badge" alt="Status"/>
+<img src="https://img.shields.io/badge/Status-deployed%20on%20StudioNet-22c55e?style=for-the-badge" alt="Status"/>
 
 <br/><br/>
 
@@ -82,11 +82,12 @@ A commit-pinned path cannot change after it is committed to, so content cannot b
 <div align="center">
 
 ![Tested](https://img.shields.io/badge/contract%20logic%20in%20direct%20mode-tested-brightgreen?style=flat-square)
-![Untested](https://img.shields.io/badge/live%20StudioNet%20consensus-untested-yellow?style=flat-square)
+![Deployed](https://img.shields.io/badge/StudioNet%20deployment-finalized-brightgreen?style=flat-square)
+![Untested](https://img.shields.io/badge/live%20adjudication%20consensus-untested-yellow?style=flat-square)
 
 </div>
 
-**The contract is not deployed yet** (`CONTRACT_ADDRESS` in `src/config/chains.ts` is empty and the app says so). 100 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or that validators can fetch `raw.githubusercontent.com`. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
+The contract is deployed to StudioNet at [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. No adjudication has been run against it yet. 100 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or that validators can fetch `raw.githubusercontent.com` (no live adjudication has been run). StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
 
 <br/>
 
@@ -373,7 +374,7 @@ pytest tests -v -k "release or reclaim or exit or stalled" -p no:cacheprovider
 
 ## Deployment
 
-The contract is **not deployed yet**. After deploying, set `CONTRACT_ADDRESS` in `src/config/chains.ts`.
+The contract is deployed to StudioNet at [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885) and `CONTRACT_ADDRESS` in `src/config/chains.ts` points to it. To redeploy, follow the steps below and update that constant.
 
 ### 1. Lint the contract
 
@@ -489,7 +490,8 @@ LICENSE                              MIT
 | Bounded exit on every fund path | ✅ |
 | `genvm-lint check` passes | ✅ |
 | 100 direct tests with the SDK pinned to v0.2.16; planted bugs fail them | ✅ |
-| Live StudioNet deployment and consensus | ⏳ not done |
+| Live StudioNet deployment | ✅ deployed (constructor finalized) |
+| Live adjudication consensus | ⏳ not run yet |
 
 </div>
 

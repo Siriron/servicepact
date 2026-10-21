@@ -7,8 +7,8 @@ export const STUDIONET = {
   explorerBase: 'https://explorer-studio.genlayer.com',
 } as const
 
-// Set after deploying contracts/service_pact.py to StudioNet. Empty means "not deployed yet".
-export const CONTRACT_ADDRESS: string = ''
+// Deployed to StudioNet (constructor tx finalized, per the explorer).
+export const CONTRACT_ADDRESS: string = '0xDFC205f0AB2D2377A898D84A5360A2Baa661F885'
 
 // Public fixtures used by the in-app test guide (repository + commit that contains evidence/fixtures/*).
 export const FIXTURE_REPO: string = 'Siriron/servicepact'
