@@ -501,7 +501,6 @@ LICENSE                              MIT
 
 ---
 
-
 ## License
 
 MIT — see [`LICENSE`](LICENSE)
