@@ -8,6 +8,7 @@
 <img src="https://img.shields.io/badge/Tests-100%20Direct%20Mode-22c55e?style=for-the-badge" alt="Tests"/>
 <img src="https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge" alt="License"/>
 <img src="https://img.shields.io/badge/Status-deployed%20on%20StudioNet-22c55e?style=for-the-badge" alt="Status"/>
+<img src="https://github.com/Siriron/servicepact/actions/workflows/ci.yml/badge.svg" alt="CI"/>
 
 <br/><br/>
 
