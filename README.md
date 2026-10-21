@@ -86,11 +86,12 @@ A commit-pinned path cannot change after it is committed to, so content cannot b
 ![Deployed](https://img.shields.io/badge/StudioNet%20deployment-finalized-brightgreen?style=flat-square)
 ![Live](https://img.shields.io/badge/live%20adjudication%20consensus-observed-brightgreen?style=flat-square)
 ![Payout](https://img.shields.io/badge/release__payment-finalized%20live-brightgreen?style=flat-square)
-![Untested](https://img.shields.io/badge/reclaim%20and%20timed%20exits-untested%20live-yellow?style=flat-square)
+![Reclaim](https://img.shields.io/badge/reclaim%20after%20repair%20exhaustion-finalized%20live-brightgreen?style=flat-square)
+![Untested](https://img.shields.io/badge/deadline%20and%20window%20exits-untested%20live-yellow?style=flat-square)
 
 </div>
 
-The contract is deployed to StudioNet at [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. Transaction links for the observed runs are in [`docs/deployment.md`](docs/deployment.md#observed-live-runs-studionet-oct-21-2026). On Oct 21 2026 the in-app guide drove live runs on it: three adjudications reached validator consensus (explorer: GenVM SUCCESS, consensus Accepted). 100 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or the reclaim and timed exits on a live network. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
+The contract is deployed to StudioNet at [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. Transaction links for the observed runs are in [`docs/deployment.md`](docs/deployment.md#observed-live-runs-studionet-oct-21-2026). On Oct 21 2026 the in-app guide drove live runs on it: three adjudications reached validator consensus (explorer: GenVM SUCCESS, consensus Accepted). 100 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or the deadline and repair-window exits on a live network. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
 
 <br/>
 
@@ -497,7 +498,8 @@ LICENSE                              MIT
 | Live StudioNet deployment | ✅ deployed (constructor finalized) |
 | Live adjudication consensus | ✅ observed (STALLED, repair, DELIVERED; marker replay guard) |
 | Live `release_payment` | ✅ finalized, returned `released: 1`, state RELEASED (recipient balance not checked) |
-| Live reclaim and timed exits | ⏳ not yet observed |
+| Live `reclaim_funds` after repair-budget exhaustion | ✅ STALLED (revision 2 of 2) then RECLAIMED, 1 returned to the client |
+| Live deadline and repair-window exits | ⏳ not yet observed (tests only) |
 
 </div>
 

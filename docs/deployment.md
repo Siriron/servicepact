@@ -2,7 +2,7 @@
 
 ## Status of this repository
 
-The contract is deployed to StudioNet at `0xDFC205f0AB2D2377A898D84A5360A2Baa661F885` (https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885). The explorer shows the constructor transaction FINALIZED with GenVM result SUCCESS. Live runs on Oct 21 2026 (driven from the in-app guide, read from the explorer and the engagement page) showed: validators fetched commit-pinned files from raw.githubusercontent.com and reached consensus on three adjudications (GenVM SUCCESS, consensus Accepted); a thin one-line delivery was judged STALLED, a repair resubmission with real content was judged DELIVERED with all six criteria SATISFIED; a delivery stamped for a different engagement id was STALLED by the code-level marker check (replay guard). `release_payment` before DELIVERED reverted as designed. `release_payment` on the DELIVERED engagement was then FINALIZED with GenVM SUCCESS, returned `{"released": 1}` and moved the engagement to RELEASED; the explorer lists one related transaction for it (the recipient's balance change was not checked). **Not yet observed live:** `reclaim_funds`, the repair-exhaustion exit and the deadline and window exits.
+The contract is deployed to StudioNet at `0xDFC205f0AB2D2377A898D84A5360A2Baa661F885` (https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885). The explorer shows the constructor transaction FINALIZED with GenVM result SUCCESS. Live runs on Oct 21 2026 (driven from the in-app guide, read from the explorer and the engagement page) showed: validators fetched commit-pinned files from raw.githubusercontent.com and reached consensus on three adjudications (GenVM SUCCESS, consensus Accepted); a thin one-line delivery was judged STALLED, a repair resubmission with real content was judged DELIVERED with all six criteria SATISFIED; a delivery stamped for a different engagement id was STALLED by the code-level marker check (replay guard). `release_payment` before DELIVERED reverted as designed. `release_payment` on the DELIVERED engagement was then FINALIZED with GenVM SUCCESS, returned `{"released": 1}` and moved the engagement to RELEASED; the explorer lists one related transaction for it (the recipient's balance change was not checked). `reclaim_funds` was observed live on `g-paid-feukdu`: a second STALLED verdict used up the repair budget (revision 2 of 2), the client's reclaim then returned the escrow and the state became RECLAIMED. **Not yet observed live:** the deadline exit (opened, never delivered), the funded-never-opened exit and the 7-day repair-window expiry (covered by the direct-mode tests only).
 
 ## Steps
 
@@ -28,8 +28,10 @@ Driven from the in-app guide; results read from the explorer and the engagement 
 | `g-paid-feukdu` | `submit_delivery` | [`0xb8f03916…`](https://explorer-studio.genlayer.com/tx/0xb8f03916a47b61a88af73248ab98338ca11aa27aefc2ea60142b0c9e374c6476) | SUCCESS |
 | `g-paid-feukdu` | `adjudicate_engagement` (another engagement's file) | [`0x716502ed…`](https://explorer-studio.genlayer.com/tx/0x716502ed8ba0e20e617c48612c685a2246e752b33adaf400f3714e9a4317c66c) | STALLED: engagement_identity UNRESOLVED (replay guard) |
 | `g-paid-feukdu` | `resubmit_delivery` | [`0xe61c093b…`](https://explorer-studio.genlayer.com/tx/0xe61c093b88bd2fba081f48de3e6a39f05f1d555a863d7bcc063a20258bded435) | SUCCESS |
+| `g-paid-feukdu` | `adjudicate_engagement` (revision 2) | [`0x8e9f5090…`](https://explorer-studio.genlayer.com/tx/0x8e9f50904cee25ca14f512a77f1c507363f9c1c057b6bbca2556bbc02f3fcb53) | STALLED again, repair budget exhausted (2 of 2) |
+| `g-paid-feukdu` | `reclaim_funds` | [`0x0607e8c3…`](https://explorer-studio.genlayer.com/tx/0x0607e8c3035d236715cf6515e98a82a472c1126cec76412910dc3f507b531393) | SUCCESS, state RECLAIMED, 1 returned to the client |
 
-Not observed live: `reclaim_funds`, the repair-exhaustion exit and the deadline and window exits (covered by the direct-mode tests only).
+Not observed live: the deadline exit, the funded-never-opened exit and the repair-window expiry (covered by the direct-mode tests only).
 
 ## What the tests prove
 
