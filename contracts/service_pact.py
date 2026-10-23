@@ -38,13 +38,39 @@ Deterministic, computed in code:
 Judged by validators (exact agreement, zero tolerance):
   scope_completeness, quality_standard, acceptance_checklist
 
-Outcome rule (code, not the model): any VIOLATED -> REJECTED; otherwise any
+Outcome rule (code, not the model): any VIOLATED -> REJECTED; otherwise, when the
+contractor's work was fetched and bound but a CLIENT-controlled document (SOW or
+checklist) was unavailable -> EVIDENCE_HELD, then CLIENT_DEFAULT; otherwise any
 UNRESOLVED -> STALLED; otherwise DELIVERED. Missing identity/contractor markers
 are UNRESOLVED (fixable by resubmission); a late first submission is VIOLATED.
+
+CLIENT-CONTROLLED EVIDENCE CANNOT BE WITHHELD FOR PROFIT
+--------------------------------------------------------
+The contractor controls the work documents; the client controls the SOW and the
+checklist. Unavailable work documents stall the engagement (the contractor's
+problem: repair or the client reclaims). Unavailable client documents never stall
+it in the client's favour: the engagement moves to EVIDENCE_HELD and records when
+that was first observed. If a later adjudication (callable by anyone) still cannot
+fetch them after CLIENT_EVIDENCE_GRACE, the outcome is CLIENT_DEFAULT and the
+contractor may release the payment. Restoring the documents at any time resumes
+normal judgment and resets the clock. The client cannot reclaim while evidence is
+held; if the contractor never triggers a second adjudication, the client may reclaim
+only after HELD_ABANDON_WINDOW.
+
+NEUTRAL RECOVERY WHEN ADJUDICATION NEVER FINALIZES
+--------------------------------------------------
+If an engagement stays SUBMITTED for ADJUDICATION_TIMEOUT after the delivery was
+recorded (validators keep disagreeing, timing out, or ending UNDETERMINED), anyone
+may call recover_unadjudicated: the escrow is split in half, floor(amount/2) to the
+contractor and the rest to the client, and the engagement is RECOVERED. The rule
+never reads a document, a model reply or a caller-supplied value.
 
 VERDICT REACHABILITY (every value traced to a code branch)
 ----------------------------------------------------------
 DELIVERED  adjudicate: all six SATISFIED.
+EVIDENCE_HELD / CLIENT_DEFAULT  adjudicate: work fetched and bound (both markers
+           SATISFIED), no VIOLATED, and a SOW or checklist document unavailable.
+RECOVERED  recover_unadjudicated: SUBMITTED past ADJUDICATION_TIMEOUT.
 REJECTED   adjudicate: a validator-judged criterion VIOLATED, or the first
            submission was after the deadline (timeline VIOLATED).
 STALLED    adjudicate: any UNRESOLVED and nothing VIOLATED (fetch failure, ambiguous
@@ -55,7 +81,11 @@ FUNDS AND EXITS (pull-based; state is written before any transfer)
 fund_engagement  client escrows the exact amount (DRAFT -> FUNDED).
 FUNDED           client may reclaim_funds at any time (contractor cannot act yet).
 OPEN, no packet  client may reclaim_funds once the deadline has passed.
-SUBMITTED        anyone may adjudicate_engagement; no party can block it.
+SUBMITTED        anyone may adjudicate_engagement; no party can block it. Past
+                 ADJUDICATION_TIMEOUT anyone may recover_unadjudicated (50/50 split).
+EVIDENCE_HELD    anyone may adjudicate again; the client may reclaim only after
+                 HELD_ABANDON_WINDOW from the first observation.
+CLIENT_DEFAULT   contractor calls release_payment.
 DELIVERED        contractor calls release_payment.
 REJECTED         client calls reclaim_funds.
 STALLED          contractor may resubmit within RESUBMIT_WINDOW and the repair
@@ -64,7 +94,14 @@ STALLED          contractor may resubmit within RESUBMIT_WINDOW and the repair
 DELIBERATE GAPS
 ---------------
 * No appeal on REJECTED beyond protocol-level appeals.
-* A DELIVERED escrow stays claimable by the contractor indefinitely.
+* A DELIVERED or CLIENT_DEFAULT escrow stays claimable by the contractor indefinitely.
+* The 50/50 recovery split is a no-fault rule, not a verdict: a party who expects an
+  unfavourable verdict could prefer it, so the timeout is long and any account can
+  adjudicate in the meantime.
+* A fetch failure that is really a transient GitHub outage is observed twice, at
+  least CLIENT_EVIDENCE_GRACE apart, before it can pay the contractor.
+* Amounts up to 10**24 are returned as decimal strings; JSON numbers lose precision
+  above 2**53 in JavaScript clients.
 * The judged criteria compare statuses only; observed_fact and witness ids are
   audit metadata and are not compared across validators.
 * Only text files in public GitHub repositories can be evidence.
@@ -88,6 +125,9 @@ REJECTED = "REJECTED"
 STALLED = "STALLED"
 RELEASED = "RELEASED"
 RECLAIMED = "RECLAIMED"
+EVIDENCE_HELD = "EVIDENCE_HELD"
+CLIENT_DEFAULT = "CLIENT_DEFAULT"
+RECOVERED = "RECOVERED"
 
 SATISFIED = "SATISFIED"
 VIOLATED = "VIOLATED"
@@ -120,6 +160,9 @@ _MAX_REASONING = 800
 _MAX_FACT = 400
 _MAX_PAGE = 50
 _RESUBMIT_WINDOW = 7 * 86400
+_ADJUDICATION_TIMEOUT = 3 * 86400
+_CLIENT_EVIDENCE_GRACE = 3 * 86400
+_HELD_ABANDON_WINDOW = 30 * 86400
 _RAW_HOST = "https://raw.githubusercontent.com/"
 _HEX = "0123456789abcdef"
 _ID_EXTRA = "._-"
@@ -391,10 +434,11 @@ def _entry(cid, status, witnesses, fact) -> dict:
     return {"criterion_id": cid, "status": status, "witness_document_ids": witnesses, "observed_fact": fact}
 
 
-def _all_unresolved(reason, witnesses) -> dict:
+def _all_unresolved(reason, witnesses, client_unavailable) -> dict:
     return {
         "criteria": [_entry(cid, UNRESOLVED, list(witnesses), reason) for cid in _BINDING_IDS + _JUDGED_IDS],
         "reasoning": reason,
+        "client_unavailable": list(client_unavailable),
     }
 
 
@@ -445,16 +489,24 @@ def _evaluate(eid, contractor_key, requirements, sow_docs, checklist_docs, work_
     """Fetch every committed document and judge. Pure function of its arguments + the web."""
     all_docs = sow_docs + checklist_docs + work_docs
     valid_ids = [d["document_id"] for d in all_docs]
+    client_ids = [d["document_id"] for d in sow_docs + checklist_docs]
     texts = {}
-    unavailable = []
+    client_missing = []
+    work_missing = []
     for d in all_docs:
         t = _fetch_text(_doc_url(d))
         if _failed(t):
-            unavailable.append(d["document_id"])
+            if d["document_id"] in client_ids:
+                client_missing.append(d["document_id"])
+            else:
+                work_missing.append(d["document_id"])
         else:
             texts[d["document_id"]] = t
-    if unavailable:
-        return _all_unresolved("Committed documents were unavailable: " + ", ".join(sorted(unavailable)), sorted(unavailable))
+    client_missing = sorted(client_missing)
+    work_missing = sorted(work_missing)
+    if work_missing:
+        both = sorted(work_missing + client_missing)
+        return _all_unresolved("Committed documents were unavailable: " + ", ".join(both), both, client_missing)
 
     work_text = "\n".join(texts[d["document_id"]] for d in work_docs).lower()
     id_ok = ("engagement:" + eid.lower()) in work_text
@@ -466,6 +518,11 @@ def _evaluate(eid, contractor_key, requirements, sow_docs, checklist_docs, work_
         _entry("contractor_binding", SATISFIED if ctr_ok else UNRESOLVED, work_ids,
                "Work product names the contractor address." if ctr_ok else "Work product does not contain the contractor marker."),
     ]
+
+    if client_missing:
+        reason = "Client-controlled documents were unavailable: " + ", ".join(client_missing)
+        judged_missing = [_entry(cid, UNRESOLVED, list(client_missing), reason) for cid in _JUDGED_IDS]
+        return {"criteria": binding + judged_missing, "reasoning": reason, "client_unavailable": client_missing}
 
     def block(label, docs):
         parts = []
@@ -488,8 +545,8 @@ def _evaluate(eid, contractor_key, requirements, sow_docs, checklist_docs, work_
         raw = gl.nondet.exec_prompt(prompt, response_format="json")
         judged = _parse_judged(raw, valid_ids)
     except Exception:
-        return _all_unresolved("The model reply was malformed; no verdict was accepted.", [])
-    return {"criteria": binding + judged["criteria"], "reasoning": judged["reasoning"]}
+        return _all_unresolved("The model reply was malformed; no verdict was accepted.", [], [])
+    return {"criteria": binding + judged["criteria"], "reasoning": judged["reasoning"], "client_unavailable": []}
 
 
 def _status_map(result) -> dict:
@@ -532,7 +589,9 @@ class Engagement:
     state: str
     revision: u256
     first_submitted_at: u256
+    last_submitted_at: u256
     stalled_at: u256
+    held_since: u256
     adjudication_json: str
     client_receipt: u256
     contractor_receipt: u256
@@ -588,7 +647,7 @@ class ServicePact(gl.Contract):
             "engagement_id": eng.engagement_id,
             "client": _addr_key(eng.client),
             "contractor": _addr_key(eng.contractor),
-            "amount": int(eng.amount),
+            "amount": str(int(eng.amount)),
             "sow": json.loads(eng.sow_json),
             "checklist": json.loads(eng.checklist_json),
             "criteria": json.loads(eng.criteria_json),
@@ -598,11 +657,16 @@ class ServicePact(gl.Contract):
             "state": eng.state,
             "revision": rev,
             "first_submitted_at": int(eng.first_submitted_at),
+            "last_submitted_at": int(eng.last_submitted_at),
             "stalled_at": int(eng.stalled_at),
+            "held_since": int(eng.held_since),
             "resubmit_window_seconds": _RESUBMIT_WINDOW,
+            "adjudication_timeout_seconds": _ADJUDICATION_TIMEOUT,
+            "client_evidence_grace_seconds": _CLIENT_EVIDENCE_GRACE,
+            "held_abandon_window_seconds": _HELD_ABANDON_WINDOW,
             "adjudication": json.loads(eng.adjudication_json),
-            "client_receipt": int(eng.client_receipt),
-            "contractor_receipt": int(eng.contractor_receipt),
+            "client_receipt": str(int(eng.client_receipt)),
+            "contractor_receipt": str(int(eng.contractor_receipt)),
             "markers": {
                 "engagement": "engagement:" + eng.engagement_id,
                 "contractor": "contractor:" + _addr_key(eng.contractor),
@@ -629,6 +693,7 @@ class ServicePact(gl.Contract):
         if revision == 1:
             eng.first_submitted_at = u256(now)
         eng.revision = u256(revision)
+        eng.last_submitted_at = u256(now)
         eng.state = SUBMITTED
         self.engagements[eng.engagement_id] = eng
         return revision
@@ -672,7 +737,7 @@ class ServicePact(gl.Contract):
             json.dumps(checklist, sort_keys=True),
             json.dumps(crit, sort_keys=True),
             deadline, u256(deadline_epoch), max_repairs,
-            DRAFT, u256(0), u256(0), u256(0), "{}", u256(0), u256(0),
+            DRAFT, u256(0), u256(0), u256(0), u256(0), u256(0), "{}", u256(0), u256(0),
         )
         idx = int(self.engagement_count)
         self.engagement_order[u256(idx)] = eid
@@ -721,7 +786,7 @@ class ServicePact(gl.Contract):
     @gl.public.write
     def adjudicate_engagement(self, engagement_id: str) -> str:
         eng = self._get(engagement_id)
-        assert eng.state == SUBMITTED, "engagement is not awaiting adjudication"
+        assert eng.state == SUBMITTED or eng.state == EVIDENCE_HELD, "engagement is not awaiting adjudication"
         key = _packet_key(eng.engagement_id, eng.revision)
         assert key in self.packets, "packet not found"
         packet = self.packets[key]
@@ -761,6 +826,9 @@ class ServicePact(gl.Contract):
                     return False
                 if leader_status.get(cid) != my_status.get(cid):
                     return False
+            leader_missing = leader_data.get("client_unavailable")
+            if not isinstance(leader_missing, list) or leader_missing != mine.get("client_unavailable"):
+                return False
             return True
 
         result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -777,20 +845,39 @@ class ServicePact(gl.Contract):
         by_id["timeline_compliance"] = timeline
         statuses = {cid: by_id[cid]["status"] for cid in CRITERION_IDS}
         outcome = _outcome(statuses)
+        client_missing = result.get("client_unavailable")
+        client_missing = list(client_missing) if isinstance(client_missing, list) else []
+
+        # Client-controlled evidence that stays unavailable must never benefit the client.
+        # Only when the contractor's own work was fetched and bound (so no VIOLATED and no
+        # UNRESOLVED binding) does a missing SOW/checklist hold or default the engagement.
+        now = _now_epoch_seconds()
+        binding_ok = statuses["engagement_identity"] == SATISFIED and statuses["contractor_binding"] == SATISFIED
+        held_since = 0
+        if outcome != REJECTED and len(client_missing) > 0 and binding_ok:
+            held_since = int(eng.held_since)
+            if held_since == 0:
+                held_since = max(now, 1)
+            if now >= held_since + _CLIENT_EVIDENCE_GRACE:
+                outcome = CLIENT_DEFAULT
+            else:
+                outcome = EVIDENCE_HELD
 
         record = {
             "revision": revision,
             "criteria": [by_id[cid] for cid in CRITERION_IDS],
             "outcome": outcome,
             "reasoning": _sanitize(result.get("reasoning", ""), _MAX_REASONING),
+            "client_unavailable": client_missing,
         }
-        packet.state = outcome
+        packet.state = SUBMITTED if outcome == EVIDENCE_HELD else outcome
         packet.result_json = json.dumps(record, sort_keys=True)
         self.packets[key] = packet
         eng.state = outcome
+        eng.held_since = u256(held_since)
         eng.adjudication_json = packet.result_json
         if outcome == STALLED:
-            eng.stalled_at = u256(_now_epoch_seconds())
+            eng.stalled_at = u256(now)
         self.engagements[eng.engagement_id] = eng
         return json.dumps({"engagement_id": eng.engagement_id, "revision": revision, "outcome": outcome})
 
@@ -798,13 +885,13 @@ class ServicePact(gl.Contract):
     def release_payment(self, engagement_id: str) -> str:
         eng = self._get(engagement_id)
         self._only_contractor(eng)
-        assert eng.state == DELIVERED, "only a DELIVERED engagement can be paid out"
+        assert eng.state == DELIVERED or eng.state == CLIENT_DEFAULT, "only a DELIVERED or CLIENT_DEFAULT engagement can be paid out"
         amount = int(eng.amount)
         eng.state = RELEASED
         eng.contractor_receipt = u256(amount)
         self.engagements[eng.engagement_id] = eng
         self._pay(eng.contractor, amount)
-        return json.dumps({"engagement_id": eng.engagement_id, "released": amount})
+        return json.dumps({"engagement_id": eng.engagement_id, "released": str(amount)})
 
     @gl.public.write
     def reclaim_funds(self, engagement_id: str) -> str:
@@ -818,6 +905,8 @@ class ServicePact(gl.Contract):
             assert now > int(eng.deadline_epoch), "deadline has not passed"
         elif eng.state == REJECTED:
             pass
+        elif eng.state == EVIDENCE_HELD:
+            assert int(eng.held_since) > 0 and now > int(eng.held_since) + _HELD_ABANDON_WINDOW, "client evidence is still being held for the contractor"
         elif eng.state == STALLED:
             exhausted = int(eng.revision) > int(eng.max_repairs)
             expired = now > int(eng.stalled_at) + _RESUBMIT_WINDOW
@@ -829,7 +918,45 @@ class ServicePact(gl.Contract):
         eng.client_receipt = u256(amount)
         self.engagements[eng.engagement_id] = eng
         self._pay(eng.client, amount)
-        return json.dumps({"engagement_id": eng.engagement_id, "reclaimed": amount})
+        return json.dumps({"engagement_id": eng.engagement_id, "reclaimed": str(amount)})
+
+    @gl.public.write
+    def recover_unadjudicated(self, engagement_id: str) -> str:
+        """Neutral no-fault exit when adjudication never finalizes. Callable by anyone."""
+        eng = self._get(engagement_id)
+        assert eng.state == SUBMITTED, "only an engagement stuck in SUBMITTED can be recovered"
+        submitted_at = int(eng.last_submitted_at)
+        assert submitted_at > 0 and _now_epoch_seconds() > submitted_at + _ADJUDICATION_TIMEOUT, "adjudication timeout has not passed"
+        key = _packet_key(eng.engagement_id, eng.revision)
+        assert key in self.packets, "packet not found"
+        packet = self.packets[key]
+        amount = int(eng.amount)
+        contractor_share = amount // 2
+        client_share = amount - contractor_share
+        record = {
+            "revision": int(packet.revision),
+            "criteria": [],
+            "outcome": RECOVERED,
+            "reasoning": "Adjudication did not finalize within the timeout; the escrow was split without a verdict.",
+            "client_unavailable": [],
+        }
+        packet.state = RECOVERED
+        packet.result_json = json.dumps(record, sort_keys=True)
+        self.packets[key] = packet
+        eng.state = RECOVERED
+        eng.client_receipt = u256(client_share)
+        eng.contractor_receipt = u256(contractor_share)
+        eng.adjudication_json = packet.result_json
+        self.engagements[eng.engagement_id] = eng
+        if contractor_share > 0:
+            self._pay(eng.contractor, contractor_share)
+        self._pay(eng.client, client_share)
+        return json.dumps({
+            "engagement_id": eng.engagement_id,
+            "state": RECOVERED,
+            "to_contractor": str(contractor_share),
+            "to_client": str(client_share),
+        })
 
     # ------------------------------------------------------------------
     # views

@@ -44,9 +44,12 @@ export function EngagementPage({ id, account }: { id: string; account: string | 
   const isContractor = same(account, eng.contractor)
   const now = nowEpoch()
   const canReclaim = isClient && (eng.state === 'FUNDED' || eng.state === 'REJECTED'
+    || (eng.state === 'EVIDENCE_HELD' && eng.held_since > 0 && now > eng.held_since + eng.held_abandon_window_seconds)
     || (eng.state === 'OPEN' && eng.revision === 0 && now > eng.deadline_epoch)
     || (eng.state === 'STALLED' && (eng.revision > eng.max_repairs || now > eng.stalled_at + eng.resubmit_window_seconds)))
   const canResubmit = isContractor && eng.state === 'STALLED' && eng.revision <= eng.max_repairs && now <= eng.stalled_at + eng.resubmit_window_seconds
+  const canRecover = eng.state === 'SUBMITTED' && eng.last_submitted_at > 0 && now > eng.last_submitted_at + eng.adjudication_timeout_seconds
+  const canPay = isContractor && (eng.state === 'DELIVERED' || eng.state === 'CLIENT_DEFAULT')
   const adj = eng.adjudication
 
   return (
@@ -59,6 +62,9 @@ export function EngagementPage({ id, account }: { id: string; account: string | 
           Client <a className="link mono" href={addrUrl(eng.client)} target="_blank" rel="noreferrer">{short(eng.client)}</a>{isClient && ' (you)'} · Contractor <a className="link mono" href={addrUrl(eng.contractor)} target="_blank" rel="noreferrer">{short(eng.contractor)}</a>{isContractor && ' (you)'}
         </p>
         {eng.state === 'RELEASED' && <p style={{ fontSize: 13 }}>Released to the contractor ({eng.contractor_receipt}). Payouts land only after finalization.</p>}
+        {eng.state === 'RECOVERED' && <p style={{ fontSize: 13 }}>Adjudication did not finalize in time, so the escrow was split without a verdict: {eng.contractor_receipt} to the contractor and {eng.client_receipt} to the client. Payouts land only after finalization.</p>}
+        {eng.state === 'EVIDENCE_HELD' && <Notice kind="warn">A client-controlled document ({(adj.client_unavailable ?? []).join(', ') || 'SOW or checklist'}) could not be fetched. The escrow is held for the contractor: anyone may adjudicate again, and if it is still unavailable after {fmtEpoch(eng.held_since + eng.client_evidence_grace_seconds)} the contractor is paid. Restoring the documents resumes normal judgment. The client may reclaim only after {fmtEpoch(eng.held_since + eng.held_abandon_window_seconds)} if nobody adjudicates.</Notice>}
+        {eng.state === 'CLIENT_DEFAULT' && <Notice kind="info">The client's documents stayed unavailable after the grace period. The contractor can release the payment.</Notice>}
         {eng.state === 'RECLAIMED' && <p style={{ fontSize: 13 }}>Returned to the client ({eng.client_receipt}). Payouts land only after finalization.</p>}
       </Card>
 
@@ -96,14 +102,16 @@ export function EngagementPage({ id, account }: { id: string; account: string | 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {isClient && eng.state === 'DRAFT' && <button className="btn btn-primary" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Fund', functionName: 'fund_engagement', args: [eng.engagement_id], value: BigInt(eng.amount) })}>Fund {eng.amount}</button>}
           {isClient && eng.state === 'FUNDED' && <button className="btn btn-primary" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Open', functionName: 'open_engagement', args: [eng.engagement_id] })}>Open for delivery</button>}
-          {eng.state === 'SUBMITTED' && <button className="btn btn-primary" disabled={!!act.busy || !account} onClick={() => void writeContract({ label: 'Adjudicate', functionName: 'adjudicate_engagement', args: [eng.engagement_id] })}>Adjudicate (anyone)</button>}
-          {isContractor && eng.state === 'DELIVERED' && <button className="btn btn-primary" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Release payment', functionName: 'release_payment', args: [eng.engagement_id] })}>Release payment</button>}
+          {(eng.state === 'SUBMITTED' || eng.state === 'EVIDENCE_HELD') && <button className="btn btn-primary" disabled={!!act.busy || !account} onClick={() => void writeContract({ label: 'Adjudicate', functionName: 'adjudicate_engagement', args: [eng.engagement_id] })}>Adjudicate (anyone)</button>}
+          {canRecover && <button className="btn btn-danger" disabled={!!act.busy || !account} onClick={() => void writeContract({ label: 'Recover escrow', functionName: 'recover_unadjudicated', args: [eng.engagement_id] })}>Recover escrow 50/50 (anyone)</button>}
+          {canPay && <button className="btn btn-primary" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Release payment', functionName: 'release_payment', args: [eng.engagement_id] })}>Release payment</button>}
           {canReclaim && <button className="btn btn-danger" disabled={!!act.busy} onClick={() => void writeContract({ label: 'Reclaim funds', functionName: 'reclaim_funds', args: [eng.engagement_id] })}>Reclaim funds</button>}
         </div>
-        {account && !((isClient && ['DRAFT', 'FUNDED'].includes(eng.state)) || eng.state === 'SUBMITTED' || (isContractor && (eng.state === 'DELIVERED' || canResubmit || (eng.state === 'OPEN' && eng.revision === 0))) || canReclaim) && !['RELEASED', 'RECLAIMED'].includes(eng.state) && (
-          <p style={{ fontSize: 13, color: 'var(--muted)' }}>No action is available to the connected wallet in state {eng.state}.{eng.state === 'DELIVERED' ? ' The contractor wallet releases the payment.' : ''}</p>
+        {account && !((isClient && ['DRAFT', 'FUNDED'].includes(eng.state)) || eng.state === 'SUBMITTED' || eng.state === 'EVIDENCE_HELD' || (isContractor && (canPay || canResubmit || (eng.state === 'OPEN' && eng.revision === 0))) || canReclaim) && !['RELEASED', 'RECLAIMED', 'RECOVERED'].includes(eng.state) && (
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>No action is available to the connected wallet in state {eng.state}.{eng.state === 'DELIVERED' || eng.state === 'CLIENT_DEFAULT' ? ' The contractor wallet releases the payment.' : ''}</p>
         )}
         {eng.state === 'OPEN' && isClient && eng.revision === 0 && now <= eng.deadline_epoch && <p style={{ fontSize: 13, color: 'var(--muted)' }}>Reclaiming opens after the deadline if the contractor never delivers.</p>}
+        {eng.state === 'SUBMITTED' && !canRecover && <p style={{ fontSize: 13, color: 'var(--muted)' }}>If adjudication never finalizes, anyone can recover the escrow (50/50, no verdict) after {fmtEpoch(eng.last_submitted_at + eng.adjudication_timeout_seconds)}.</p>}
         {eng.state === 'STALLED' && isClient && !canReclaim && <p style={{ fontSize: 13, color: 'var(--muted)' }}>The contractor can still repair until {fmtEpoch(eng.stalled_at + eng.resubmit_window_seconds)} or until the repair budget runs out.</p>}
 
         {((isContractor && eng.state === 'OPEN' && eng.revision === 0) || canResubmit) && (

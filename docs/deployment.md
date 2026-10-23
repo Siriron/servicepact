@@ -2,6 +2,8 @@
 
 ## Status of this repository
 
+**Oct 23 2026:** the contract was changed after a steward request (recovery path, withheld client evidence, lossless amounts). The address below is the previous deployment and does not contain the changes; redeploy `contracts/service_pact.py`, update `CONTRACT_ADDRESS`, then run the new guide scenarios. Nothing in the new paths has been observed live. The live observations below describe the previous contract.
+
 The contract is deployed to StudioNet at `0xDFC205f0AB2D2377A898D84A5360A2Baa661F885` (https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885). The explorer shows the constructor transaction FINALIZED with GenVM result SUCCESS. Live runs on Oct 21 2026 (driven from the in-app guide, read from the explorer and the engagement page) showed: validators fetched commit-pinned files from raw.githubusercontent.com and reached consensus on three adjudications (GenVM SUCCESS, consensus Accepted); a thin one-line delivery was judged STALLED, a repair resubmission with real content was judged DELIVERED with all six criteria SATISFIED; a delivery stamped for a different engagement id was STALLED by the code-level marker check (replay guard). `release_payment` before DELIVERED reverted as designed. `release_payment` on the DELIVERED engagement was then FINALIZED with GenVM SUCCESS, returned `{"released": 1}` and moved the engagement to RELEASED; the explorer lists one related transaction for it (the recipient's balance change was not checked). `reclaim_funds` was observed live on `g-paid-feukdu`: a second STALLED verdict used up the repair budget (revision 2 of 2), the client's reclaim then returned the escrow and the state became RECLAIMED. **Not yet observed live:** the deadline exit (opened, never delivered), the funded-never-opened exit and the 7-day repair-window expiry (covered by the direct-mode tests only).
 
 ## Steps
@@ -42,7 +44,7 @@ genvm-lint check contracts/service_pact.py
 pytest tests -q -p no:cacheprovider
 ```
 
-100 direct-mode tests execute the real contract under the GenVM SDK **v0.2.16** (pinned in every `direct_deploy`; unpinned, `genlayer-test` resolves a v0.3 release candidate whose bundle is not published). They cover every write method, every verdict value, every field the validator compares changed in isolation, HTTP 403/404/500 and unreachable hosts, malformed model output, every fund path with exact amount and recipient, every bounded exit, a four-revision repair flow, replay and rollback, access control by sender, and a storage-pickling check.
+149 direct-mode tests execute the real contract under the GenVM SDK **v0.2.16** (pinned in every `direct_deploy`; unpinned, `genlayer-test` resolves a v0.3 release candidate whose bundle is not published). They cover every write method, every verdict value, every field the validator compares changed in isolation, HTTP 403/404/500 and unreachable hosts, malformed model output, every fund path with exact amount and recipient, every bounded exit, a four-revision repair flow, replay and rollback, access control by sender, and a storage-pickling check.
 
 They do **not** prove: real LLM behaviour, real network behaviour, real multi-node consensus timing, or how StudioNet surfaces errors. Planted bugs (the `status_code` mistake, a validator that skips agreement, a missing timeline check, a century leap-year bug, a wrong payout recipient, a removed STALLED exit) each fail the suite.
 

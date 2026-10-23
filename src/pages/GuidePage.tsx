@@ -3,14 +3,14 @@ import { Card, Chip, Field, Notice, Pending, TxLog } from '@/components/Bits'
 import { FIXTURE_COMMIT, FIXTURE_REPO } from '@/config/chains'
 import { deployed, friendly, getEngagement, isNotFound } from '@/lib/chain'
 import { navigate } from '@/lib/router'
-import { nowEpoch, same, short } from '@/lib/format'
+import { nowEpoch, same, short, validAmount } from '@/lib/format'
 import { CRITERION_IDS, DEFAULT_CRITERIA } from '@/lib/types'
 import type { DocRef, Engagement } from '@/lib/types'
 import { useActions } from '@/lib/useActions'
 
 type Who = 'client' | 'contractor' | 'anyone'
-interface Step { key: string; who: Who; label: string; done: (e: Engagement | null) => boolean }
-interface Scenario { id: string; title: string; description: string; expected: string; repairs: number; deadlineMinutes: number | null; work: 'own' | 'unbound' | 'missing' | 'none'; steps: Step[] }
+interface Step { key: string; who: Who; label: string; done: (e: Engagement | null) => boolean; hint?: (e: Engagement | null) => string }
+interface Scenario { id: string; title: string; description: string; expected: string; repairs: number; deadlineMinutes: number | null; work: 'own' | 'unbound' | 'missing' | 'none'; sow?: 'missing'; steps: Step[] }
 
 const S = {
   create: { key: 'create', who: 'client', label: 'Create the engagement (locks scope, checklist, deadline)', done: (e) => !!e },
@@ -19,6 +19,10 @@ const S = {
   submit: { key: 'submit', who: 'contractor', label: 'Submit the delivery', done: (e) => !!e && e.revision >= 1 },
   adjudicate: { key: 'adjudicate', who: 'anyone', label: 'Adjudicate (validators judge the documents)', done: (e) => !!e && e.revision >= 1 && !!e.adjudication.outcome },
   release: { key: 'release', who: 'contractor', label: 'Release the payment', done: (e) => !!e && e.state === 'RELEASED' },
+  adjudicate2: { key: 'adjudicate2', who: 'anyone', label: 'Adjudicate again (second observation of the missing SOW)', done: (e) => !!e && (e.state === 'CLIENT_DEFAULT' || e.state === 'RELEASED') },
+  waitHeld: { key: 'waitHeld', who: 'anyone', label: 'Wait for the client-evidence grace period (3 days)', done: (e) => !!e && e.held_since > 0 && nowEpoch() >= e.held_since + e.client_evidence_grace_seconds, hint: (e) => (e ? `First observed ${new Date(e.held_since * 1000).toISOString()}; press Refresh after ${new Date((e.held_since + e.client_evidence_grace_seconds) * 1000).toISOString()}.` : '') },
+  waitRecover: { key: 'waitRecover', who: 'anyone', label: 'Do not adjudicate; wait for the recovery timeout (3 days)', done: (e) => !!e && e.last_submitted_at > 0 && nowEpoch() > e.last_submitted_at + e.adjudication_timeout_seconds, hint: (e) => (e ? `Recovery opens after ${new Date((e.last_submitted_at + e.adjudication_timeout_seconds) * 1000).toISOString()}. Press Refresh once it has passed.` : '') },
+  recover: { key: 'recover', who: 'anyone', label: 'Recover the escrow (50/50 split, no verdict)', done: (e) => !!e && e.state === 'RECOVERED' },
   reclaim: { key: 'reclaim', who: 'client', label: 'Reclaim the funds', done: (e) => !!e && e.state === 'RECLAIMED' },
   wait: { key: 'wait', who: 'anyone', label: 'Wait until the deadline has passed (about 3 minutes)', done: (e) => !!e && nowEpoch() > e.deadline_epoch },
 } satisfies Record<string, Step>
@@ -29,6 +33,8 @@ const SCENARIOS: Scenario[] = [
   { id: 'missing', title: 'Unreachable document stalls', description: 'The delivery points at a file that does not exist at the pinned commit. A fetch failure is never treated as evidence.', expected: 'Outcome STALLED with every validator-judged criterion UNRESOLVED, then RECLAIMED.', repairs: 0, deadlineMinutes: null, work: 'missing', steps: [S.create, S.fund, S.open, S.submit, S.adjudicate, S.reclaim] },
   { id: 'nodelivery', title: 'Contractor never delivers', description: 'The engagement is opened, nothing is delivered, and the deadline passes. The client has a bounded exit.', expected: 'State RECLAIMED after the deadline; reclaiming before the deadline reverts.', repairs: 1, deadlineMinutes: 3, work: 'none', steps: [S.create, S.fund, S.open, S.wait, S.reclaim] },
   { id: 'late', title: 'Late delivery is rejected by code', description: 'The first delivery arrives after the deadline. The timeline criterion is computed from stored times, so the verdict is REJECTED whatever the model says.', expected: 'Outcome REJECTED with timeline_compliance VIOLATED, then RECLAIMED.', repairs: 0, deadlineMinutes: 3, work: 'unbound', steps: [S.create, S.fund, S.open, S.wait, S.submit, S.adjudicate, S.reclaim] },
+  { id: 'held', title: 'Client withholds the SOW: contractor still paid', description: 'The statement of work points at a file that does not exist at the pinned commit, as if the client had deleted it. You deliver a valid file (both markers). The first adjudication holds the escrow; the client cannot reclaim. After the 3-day grace, a second adjudication finds it still missing and the contractor is paid.', expected: 'Outcome EVIDENCE_HELD (client reclaim reverts), then after 3 days CLIENT_DEFAULT and RELEASED to the contractor.', repairs: 1, deadlineMinutes: null, work: 'own', sow: 'missing', steps: [S.create, S.fund, S.open, S.submit, S.adjudicate, S.waitHeld, S.adjudicate2, S.release] },
+  { id: 'recover', title: 'Adjudication never finalizes: neutral 50/50 recovery', description: 'A delivery is submitted and nobody adjudicates (or validators cannot finalize). After 3 days anyone can recover the escrow; no document or model is consulted.', expected: 'State RECOVERED; half (rounded down) to the contractor and the rest to the client.', repairs: 1, deadlineMinutes: null, work: 'unbound', steps: [S.create, S.fund, S.open, S.submit, S.waitRecover, S.recover] },
   { id: 'cancel', title: 'Funded but never opened', description: 'The client funds and changes their mind before opening the engagement.', expected: 'State RECLAIMED immediately.', repairs: 1, deadlineMinutes: null, work: 'none', steps: [S.create, S.fund, S.reclaim] },
 ]
 
@@ -107,11 +113,12 @@ export function GuidePage({ account }: { account: string | null }) {
     let ok = false
     if (step.key === 'create') {
       const dl = sc.deadlineMinutes ? isoIn(sc.deadlineMinutes) : '2030-01-01T00:00:00Z'
-      ok = await act.writeContract({ label: 'Create', functionName: 'create_engagement', args: [eid, ctr, BigInt(run.amount), JSON.stringify([doc('sow1', 'evidence/fixtures/sow.md')]), JSON.stringify([doc('check1', 'evidence/fixtures/checklist.md')]), JSON.stringify(DEFAULT_CRITERIA), dl, BigInt(sc.repairs)] })
+      ok = await act.writeContract({ label: 'Create', functionName: 'create_engagement', args: [eid, ctr, BigInt(run.amount), JSON.stringify([doc('sow1', sc.sow === 'missing' ? 'evidence/fixtures/sow-withdrawn.md' : 'evidence/fixtures/sow.md')]), JSON.stringify([doc('check1', 'evidence/fixtures/checklist.md')]), JSON.stringify(DEFAULT_CRITERIA), dl, BigInt(sc.repairs)] })
     } else if (step.key === 'fund') ok = await act.writeContract({ label: 'Fund', functionName: 'fund_engagement', args: [eid], value: BigInt(run.amount) })
     else if (step.key === 'open') ok = await act.writeContract({ label: 'Open', functionName: 'open_engagement', args: [eid] })
     else if (step.key === 'submit') ok = await act.writeContract({ label: 'Submit', functionName: 'submit_delivery', args: [eid, JSON.stringify(workDocs)] })
-    else if (step.key === 'adjudicate') ok = await act.writeContract({ label: 'Adjudicate', functionName: 'adjudicate_engagement', args: [eid] })
+    else if (step.key === 'adjudicate' || step.key === 'adjudicate2') ok = await act.writeContract({ label: 'Adjudicate', functionName: 'adjudicate_engagement', args: [eid] })
+    else if (step.key === 'recover') ok = await act.writeContract({ label: 'Recover', functionName: 'recover_unadjudicated', args: [eid] })
     else if (step.key === 'release') ok = await act.writeContract({ label: 'Release', functionName: 'release_payment', args: [eid] })
     else if (step.key === 'reclaim') ok = await act.writeContract({ label: 'Reclaim', functionName: 'reclaim_funds', args: [eid] })
     if (ok) await refresh()
@@ -120,7 +127,7 @@ export function GuidePage({ account }: { account: string | null }) {
   const first = sc.steps.findIndex((s) => !s.done(eng))
   const walletOk = (who: Who) => who === 'anyone' || !eng || (who === 'client' ? same(account, eng.client) : same(account, eng.contractor))
   const ownReady = sc.work !== 'own' || (own.repo.includes('/') && own.commit.length === 40 && own.path.length > 0)
-  const canCreate = /^0x[0-9a-fA-F]{40}$/.test(ctr) && /^\d+$/.test(run.amount) && run.amount !== '0'
+  const canCreate = /^0x[0-9a-fA-F]{40}$/.test(ctr) && validAmount(run.amount)
 
   if (!deployed()) return <Notice kind="warn">The contract is not deployed yet, so the guide cannot run.</Notice>
   return (
@@ -171,15 +178,16 @@ export function GuidePage({ account }: { account: string | null }) {
                   <Chip v={s.who === 'client' ? 'CLIENT WALLET' : s.who === 'contractor' ? 'CONTRACTOR WALLET' : 'ANY WALLET'} />
                   {done && <Chip v="SATISFIED" />}
                 </div>
-                {active && !done && s.key !== 'wait' && (
+                {active && !done && s.key !== 'wait' && !s.hint && (
                   <div style={{ marginTop: 6 }}>
                     {!walletOk(s.who) && <p style={{ fontSize: 12, color: 'var(--danger)', margin: '0 0 4px' }}>Switch to the {s.who} wallet ({eng ? short(s.who === 'client' ? eng.client : eng.contractor) : ''}).</p>}
-                    <button className="btn btn-primary" disabled={!!act.busy || !account || gated || (s.key === 'release' && eng?.state !== 'DELIVERED')} onClick={() => void call(s)}>{s.label.split(' (')[0]}</button>
-                    {s.key === 'release' && eng && eng.state !== 'DELIVERED' && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>Release is only possible when the outcome is DELIVERED (current state: {eng.state}).</span>}
+                    <button className="btn btn-primary" disabled={!!act.busy || !account || gated || (s.key === 'release' && eng?.state !== 'DELIVERED' && eng?.state !== 'CLIENT_DEFAULT')} onClick={() => void call(s)}>{s.label.split(' (')[0]}</button>
+                    {s.key === 'release' && eng && eng.state !== 'DELIVERED' && eng.state !== 'CLIENT_DEFAULT' && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>Release is only possible when the outcome is DELIVERED or CLIENT_DEFAULT (current state: {eng.state}).</span>}
                     {gated && <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>{s.key === 'create' ? 'Enter a valid contractor address first.' : 'Fill in your delivery file details first.'}</span>}
                   </div>
                 )}
                 {active && !done && s.key === 'wait' && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 0' }}>Deadline {eng?.deadline_iso}. Press Refresh once it has passed.</p>}
+                {active && !done && s.hint && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 0' }}>{s.hint(eng)}</p>}
               </li>
             )
           })}

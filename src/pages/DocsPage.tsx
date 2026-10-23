@@ -22,10 +22,10 @@ export function DocsPage() {
         <P>Pull-based. Funded engagements can be reclaimed before opening. An opened engagement with no delivery can be reclaimed after the deadline. REJECTED can be reclaimed. STALLED can be reclaimed once the repair budget is used or the 7-day repair window ends. A DELIVERED escrow is claimed by the contractor. Payouts are queued until finalization.</P>
       </Card>
       <Card title="Limits you should know">
-        <P>Only text files in public GitHub repositories can be evidence. There is no appeal on REJECTED beyond protocol-level appeals. A DELIVERED escrow stays claimable indefinitely. StudioNet is temporary: deployed addresses may not survive resets; the repository tests are the proof of behaviour.</P>
+        <P>Only text files in public GitHub repositories can be evidence. There is no appeal on REJECTED beyond protocol-level appeals. A DELIVERED or CLIENT_DEFAULT escrow stays claimable indefinitely. If the SOW or checklist cannot be fetched while the contractor's work is bound, the escrow is held and, after a 3-day grace and a second adjudication, the contractor is paid; the client cannot profit by withholding them. A SUBMITTED engagement that no adjudication finalizes within 3 days can be recovered by anyone with a 50/50 split. Amounts are handled as exact strings. StudioNet is temporary: deployed addresses may not survive resets; the repository tests are the proof of behaviour.</P>
       </Card>
       <Card title="Contract reference">
-        <P>Writes: create_engagement, fund_engagement (payable), open_engagement, submit_delivery, resubmit_delivery, adjudicate_engagement, release_payment, reclaim_funds. Views: get_engagement, get_packet, get_engagement_count, get_engagement_ids.</P>
+        <P>Writes: recover_unadjudicated, create_engagement, fund_engagement (payable), open_engagement, submit_delivery, resubmit_delivery, adjudicate_engagement, release_payment, reclaim_funds. Views: get_engagement, get_packet, get_engagement_count, get_engagement_ids.</P>
         <P>Contract: {CONTRACT_ADDRESS ? <code className="mono">{CONTRACT_ADDRESS}</code> : 'not deployed yet'}{REPO_URL ? <> · <a className="link" href={REPO_URL} target="_blank" rel="noreferrer">source</a></> : null}</P>
       </Card>
       <Card title="FAQ">

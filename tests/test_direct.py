@@ -170,7 +170,7 @@ def test_create_stores_the_locked_engagement(env):
     out = json.loads(env.create())
     assert out == {"engagement_id": "e1", "state": "DRAFT", "index": 0}
     e = env.eng()
-    assert e["state"] == "DRAFT" and e["amount"] == AMOUNT
+    assert e["state"] == "DRAFT" and e["amount"] == str(AMOUNT)
     assert e["client"] == hexaddr(env.client) and e["contractor"] == hexaddr(env.contractor)
     assert e["criteria"] == CRITERIA and e["deadline_iso"] == DEADLINE
     assert e["markers"] == {"engagement": "engagement:e1", "contractor": "contractor:" + hexaddr(env.contractor)}
@@ -396,15 +396,15 @@ def test_http_error_becomes_a_failure_marker_never_evidence(env, status):
     assert all(c["status"] == "UNRESOLVED" for c in adj["criteria"] if c["criterion_id"] != "timeline_compliance")
 
 
-def test_unavailable_client_document_stalls(env):
+def test_unavailable_work_document_still_stalls(env):
+    """Work documents are contractor-controlled: their absence stalls (repair, then the client may reclaim)."""
     env.vm.strict_mocks = False
     env.ready(); env.submit()
-    env.vm.mock_web(r"acme/spec/" + COMMIT + r"/sow\.md", {"status": 404, "body": "gone"})
-    env.vm.mock_web(r"acme/spec/" + COMMIT + r"/checklist\.md", {"status": 200, "body": "checklist"})
-    env.vm.mock_web(r"dev/delivery/", {"status": 200, "body": f"engagement:e1 contractor:{hexaddr(env.contractor)}"})
+    env.vm.mock_web(r"acme/spec/", {"status": 200, "body": "spec text"})
+    env.vm.mock_web(r"dev/delivery/", {"status": 404, "body": "gone"})
     env.llm()
     assert env.adjudicate()["outcome"] == "STALLED"
-    assert "sow" in env.eng()["adjudication"]["reasoning"]
+    assert "work1" in env.eng()["adjudication"]["reasoning"]
 
 
 def test_documents_reach_the_model_as_untrusted_data(env):
@@ -512,9 +512,9 @@ def test_release_pays_the_contractor_exactly_once(env):
     env.run()
     env.as_(env.contractor)
     out = json.loads(env.c.release_payment("e1"))
-    assert out["released"] == AMOUNT
+    assert out["released"] == str(AMOUNT)
     assert env.transfers == [(hexaddr(env.contractor), AMOUNT, "finalized")]
-    assert env.eng()["state"] == "RELEASED" and env.eng()["contractor_receipt"] == AMOUNT
+    assert env.eng()["state"] == "RELEASED" and env.eng()["contractor_receipt"] == str(AMOUNT)
     with pytest.raises(AssertionError, match="only a DELIVERED"):
         env.c.release_payment("e1")
     assert len(env.transfers) == 1
@@ -544,7 +544,7 @@ def test_rejected_returns_funds_to_the_client(env):
     with pytest.raises(AssertionError, match="only a DELIVERED"):
         env.c.release_payment("e1")
     env.as_(env.client)
-    assert json.loads(env.c.reclaim_funds("e1"))["reclaimed"] == AMOUNT
+    assert json.loads(env.c.reclaim_funds("e1"))["reclaimed"] == str(AMOUNT)
     assert env.transfers == [(hexaddr(env.client), AMOUNT, "finalized")]
     with pytest.raises(AssertionError, match="does not permit"):
         env.c.reclaim_funds("e1")
@@ -697,3 +697,350 @@ def test_now_epoch_seconds_returns_zero_on_malformed_input_and_never_raises(env,
     mod = sys.modules[type(env.c).__module__]
     raw_msg()["datetime"] = bad
     assert mod._now_epoch_seconds() == 0
+
+
+# ====================================================================== steward fixes (Oct 2026)
+GRACE = 3 * 86400
+TIMEOUT = 3 * 86400
+ABANDON = 30 * 86400
+
+
+def iso(epoch):
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def epoch_of(text):
+    return calendar.timegm(datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").timetuple())
+
+
+def mock_client_docs_missing(env, which=("sow",), work_ok=True, markers=True):
+    env.vm.strict_mocks = False
+    env.vm.clear_mocks()
+    env.vm.mock_web(r"acme/spec/" + COMMIT + r"/sow\.md", {"status": 404 if "sow" in which else 200, "body": "gone" if "sow" in which else "SOW text"})
+    env.vm.mock_web(r"acme/spec/" + COMMIT + r"/checklist\.md", {"status": 404 if "check" in which else 200, "body": "gone" if "check" in which else "Checklist text"})
+    body = (f"Delivery. engagement:e1 contractor:{hexaddr(env.contractor)}") if markers else "Delivery without markers"
+    env.vm.mock_web(r"dev/delivery/", {"status": 200 if work_ok else 404, "body": body if work_ok else "gone"})
+    env.llm()
+
+
+# ---------------------------------------------------- neutral recovery when adjudication never finalizes
+def test_recovery_splits_the_escrow_after_the_timeout_and_only_once(env):
+    env.ready(); env.submit()
+    submitted = env.eng()["last_submitted_at"]
+    env.as_(env.other)
+    with pytest.raises(AssertionError, match="timeout has not passed"):
+        env.c.recover_unadjudicated("e1")
+    set_time(iso(submitted + TIMEOUT))                      # exactly at the boundary: still not enough
+    with pytest.raises(AssertionError, match="timeout has not passed"):
+        env.c.recover_unadjudicated("e1")
+    set_time(iso(submitted + TIMEOUT + 1))
+    out = json.loads(env.c.recover_unadjudicated("e1"))
+    assert out == {"engagement_id": "e1", "state": "RECOVERED", "to_contractor": "500", "to_client": "500"}
+    assert env.transfers == [(hexaddr(env.contractor), 500, "finalized"), (hexaddr(env.client), 500, "finalized")]
+    e = env.eng()
+    assert e["state"] == "RECOVERED" and e["contractor_receipt"] == "500" and e["client_receipt"] == "500"
+    assert json.loads(env.c.get_packet("e1", 1))["state"] == "RECOVERED"
+    for call in (env.c.recover_unadjudicated, env.c.reclaim_funds, env.c.release_payment, env.c.adjudicate_engagement):
+        for who in (env.client, env.contractor, env.other):
+            env.as_(who)
+            with pytest.raises(AssertionError):
+                call("e1")
+    assert len(env.transfers) == 2
+
+
+@pytest.mark.parametrize("amount,to_contractor,to_client", [(1, None, 1), (2, 1, 1), (1001, 500, 501)])
+def test_recovery_rounding_never_creates_or_loses_value(env, amount, to_contractor, to_client):
+    env.create(amount=amount); env.fund(value=amount); env.open(); env.submit()
+    set_time(iso(env.eng()["last_submitted_at"] + TIMEOUT + 1))
+    env.as_(env.other)
+    env.c.recover_unadjudicated("e1")
+    expected = ([(hexaddr(env.contractor), to_contractor, "finalized")] if to_contractor else []) + [(hexaddr(env.client), to_client, "finalized")]
+    assert env.transfers == expected
+    assert sum(v for _, v, _ in env.transfers) == amount
+
+
+@pytest.mark.parametrize("state_setup", ["draft", "funded", "open", "delivered", "rejected", "stalled", "held"])
+def test_recovery_is_only_for_a_stuck_submitted_engagement(env, state_setup):
+    if state_setup == "draft":
+        env.create()
+    elif state_setup == "funded":
+        env.create(); env.fund()
+    elif state_setup == "open":
+        env.ready()
+    else:
+        env.ready(max_repairs=2); env.submit()
+        if state_setup == "held":
+            mock_client_docs_missing(env)
+        else:
+            env.mock_docs()
+            env.llm(**{"delivered": {}, "rejected": {"quality": "VIOLATED"}, "stalled": {"scope": "UNRESOLVED"}}[state_setup])
+        env.adjudicate()
+    set_time("2030-01-01T00:00:00Z")
+    env.as_(env.other)
+    with pytest.raises(AssertionError, match="only an engagement stuck in SUBMITTED"):
+        env.c.recover_unadjudicated("e1")
+    assert env.transfers == []
+
+
+def test_unknown_engagement_cannot_be_recovered(env):
+    with pytest.raises(AssertionError, match="not found"):
+        env.c.recover_unadjudicated("nope")
+
+
+def test_anyone_can_still_adjudicate_after_the_timeout_and_that_wins_over_recovery(env):
+    env.ready(); env.submit(); env.mock_docs(); env.llm()
+    set_time(iso(env.eng()["last_submitted_at"] + TIMEOUT + 10))
+    assert env.adjudicate()["outcome"] == "DELIVERED"
+    env.as_(env.other)
+    with pytest.raises(AssertionError, match="only an engagement stuck in SUBMITTED"):
+        env.c.recover_unadjudicated("e1")
+
+
+def test_recovery_clock_restarts_with_every_resubmission(env):
+    env.ready(max_repairs=2); env.submit(); env.mock_docs(); env.llm(scope="UNRESOLVED")
+    env.adjudicate()
+    first = env.eng()["last_submitted_at"]
+    set_time(iso(first + 5 * 86400))                         # inside the repair window
+    env.resubmit()
+    second = env.eng()["last_submitted_at"]
+    assert second > first
+    set_time(iso(first + TIMEOUT + 1))                       # past the FIRST delivery's timeout only
+    env.as_(env.other)
+    with pytest.raises(AssertionError, match="timeout has not passed"):
+        env.c.recover_unadjudicated("e1")
+    set_time(iso(second + TIMEOUT + 1))
+    env.c.recover_unadjudicated("e1")
+    assert [v for _, v, _ in env.transfers] == [500, 500]
+
+
+# ---------------------------------------------------- client-controlled evidence cannot be withheld for profit
+@pytest.mark.parametrize("which", [("sow",), ("check",), ("sow", "check")])
+def test_withheld_client_document_holds_the_escrow_and_never_helps_the_client(env, which):
+    env.ready(); env.submit()
+    mock_client_docs_missing(env, which)
+    out = env.adjudicate()
+    assert out["outcome"] == "EVIDENCE_HELD"
+    e = env.eng()
+    assert e["state"] == "EVIDENCE_HELD" and e["held_since"] == epoch_of(NOW)
+    adj = e["adjudication"]
+    assert adj["client_unavailable"] == sorted({"sow": "sow", "check": "check"}[w] for w in which)
+    status = {c["criterion_id"]: c["status"] for c in adj["criteria"]}
+    assert status["engagement_identity"] == status["contractor_binding"] == "SATISFIED"
+    assert all(status[c] == "UNRESOLVED" for c in JUDGED)
+    assert json.loads(env.c.get_packet("e1", 1))["state"] == "SUBMITTED"
+    # the client cannot take the money back, nobody can split it, and the contractor is not paid yet
+    env.as_(env.client)
+    with pytest.raises(AssertionError, match="still being held"):
+        env.c.reclaim_funds("e1")
+    env.as_(env.other)
+    with pytest.raises(AssertionError, match="only an engagement stuck in SUBMITTED"):
+        env.c.recover_unadjudicated("e1")
+    env.as_(env.contractor)
+    with pytest.raises(AssertionError, match="only a DELIVERED or CLIENT_DEFAULT"):
+        env.c.release_payment("e1")
+    assert env.transfers == []
+
+
+def test_second_observation_after_the_grace_pays_the_contractor_in_full(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    held = env.eng()["held_since"]
+    set_time(iso(held + GRACE - 1))
+    assert env.adjudicate()["outcome"] == "EVIDENCE_HELD"      # too early: still held, clock unchanged
+    assert env.eng()["held_since"] == held
+    set_time(iso(held + GRACE))
+    assert env.adjudicate()["outcome"] == "CLIENT_DEFAULT"
+    assert json.loads(env.c.get_packet("e1", 1))["state"] == "CLIENT_DEFAULT"
+    env.as_(env.client)
+    with pytest.raises(AssertionError, match="does not permit"):
+        env.c.reclaim_funds("e1")
+    for who in (env.client, env.other):
+        env.as_(who)
+        with pytest.raises(AssertionError, match="only the contractor"):
+            env.c.release_payment("e1")
+    env.as_(env.contractor)
+    out = json.loads(env.c.release_payment("e1"))
+    assert out["released"] == str(AMOUNT)
+    assert env.transfers == [(hexaddr(env.contractor), AMOUNT, "finalized")]
+    assert env.eng()["state"] == "RELEASED"
+    with pytest.raises(AssertionError, match="only a DELIVERED or CLIENT_DEFAULT"):
+        env.c.release_payment("e1")
+    assert len(env.transfers) == 1
+
+
+def test_restoring_the_documents_resumes_normal_judgment_and_resets_the_clock(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    set_time(iso(env.eng()["held_since"] + GRACE + 60))        # past the grace, but the documents are back
+    env.vm.clear_mocks(); env.mock_docs(); env.llm()
+    assert env.adjudicate()["outcome"] == "DELIVERED"
+    assert env.eng()["held_since"] == 0
+
+
+def test_restoring_then_withholding_again_restarts_the_grace_from_the_new_observation(env):
+    env.ready(max_repairs=2); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    first_held = env.eng()["held_since"]
+    set_time(iso(first_held + 100))
+    env.vm.clear_mocks(); env.mock_docs(); env.llm(scope="UNRESOLVED")
+    assert env.adjudicate()["outcome"] == "STALLED"             # available again: judged on the merits, clock reset
+    assert env.eng()["held_since"] == 0
+    env.resubmit()
+    mock_client_docs_missing(env)
+    set_time(iso(first_held + GRACE + 500))
+    assert env.adjudicate()["outcome"] == "EVIDENCE_HELD"       # a fresh first observation, not a default
+    assert env.eng()["held_since"] == first_held + GRACE + 500
+
+
+def test_late_delivery_is_rejected_even_if_client_documents_are_missing(env):
+    env.ready(deadline="2026-10-22T00:00:00Z"); set_time("2026-10-23T00:00:00Z"); env.submit()
+    mock_client_docs_missing(env)
+    assert env.adjudicate()["outcome"] == "REJECTED"            # the contractor's own lateness is deterministic
+    env.as_(env.client)
+    env.c.reclaim_funds("e1")
+    assert env.transfers == [(hexaddr(env.client), AMOUNT, "finalized")]
+
+
+def test_missing_markers_stall_instead_of_defaulting_to_the_contractor(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env, markers=False)
+    assert env.adjudicate()["outcome"] == "STALLED"
+    assert env.eng()["held_since"] == 0
+
+
+def test_unavailable_work_and_client_documents_stall_never_default(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env, work_ok=False)
+    out = env.adjudicate()
+    assert out["outcome"] == "STALLED"
+    assert env.eng()["adjudication"]["client_unavailable"] == ["sow"]
+
+
+def test_client_may_reclaim_only_after_the_contractor_abandons_a_held_engagement(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    held = env.eng()["held_since"]
+    env.as_(env.client)
+    set_time(iso(held + ABANDON))
+    with pytest.raises(AssertionError, match="still being held"):
+        env.c.reclaim_funds("e1")
+    set_time(iso(held + ABANDON + 1))
+    assert json.loads(env.c.reclaim_funds("e1"))["reclaimed"] == str(AMOUNT)
+    assert env.transfers == [(hexaddr(env.client), AMOUNT, "finalized")]
+
+
+def test_anyone_may_trigger_the_second_observation(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate(who=env.client)
+    set_time(iso(env.eng()["held_since"] + GRACE))
+    assert env.adjudicate(who=env.other)["outcome"] == "CLIENT_DEFAULT"
+
+
+# ---- validator agreement on the new field
+def test_validator_agrees_on_matching_withheld_documents(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    assert env.vm.run_validator() is True
+
+
+def test_validator_rejects_when_it_can_fetch_a_document_the_leader_could_not(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    env.vm.clear_mocks(); env.mock_docs(); env.llm()
+    assert env.vm.run_validator() is False
+
+
+def test_validator_rejects_when_it_cannot_fetch_a_document_the_leader_saw(env):
+    env.ready(); env.submit(); env.mock_docs(); env.llm()
+    env.adjudicate()
+    mock_client_docs_missing(env)
+    assert env.vm.run_validator() is False
+
+
+def test_validator_rejects_when_only_the_list_of_withheld_documents_differs(env):
+    env.ready(); env.submit(); mock_client_docs_missing(env, ("sow",))
+    env.adjudicate()
+    mock_client_docs_missing(env, ("sow", "check"))              # same statuses, different unavailable set
+    assert env.vm.run_validator() is False
+
+
+def test_validator_rejects_a_leader_result_without_the_unavailable_list(env):
+    env.ready(); env.submit(); env.mock_docs(); env.llm()
+    env.adjudicate()
+    leader = {"criteria": [{"criterion_id": c, "status": "SATISFIED", "witness_document_ids": [], "observed_fact": "ok"}
+                           for c in ("engagement_identity", "contractor_binding") + JUDGED],
+              "reasoning": "Looks right to me."}
+    assert env.vm.run_validator(leader_result=leader) is False
+    assert env.vm.run_validator(leader_result={**leader, "client_unavailable": []}) is True
+    assert env.vm.run_validator(leader_result={**leader, "client_unavailable": "sow"}) is False
+
+
+# ---------------------------------------------------- every permitted amount survives reads and funding losslessly
+MAX_AMOUNT = 10 ** 24
+BIG_AMOUNTS = [2 ** 53 - 1, 2 ** 53, 2 ** 53 + 1, 10 ** 18 + 1, 123456789012345678901234, MAX_AMOUNT]
+
+
+@pytest.mark.parametrize("amount", BIG_AMOUNTS)
+def test_large_amounts_are_exact_strings_through_create_fund_read_and_release(env, amount):
+    env.create(amount=amount)
+    raw = env.c.get_engagement("e1")
+    assert f'"amount": "{amount}"' in raw                            # a string in the JSON text, never a number
+    assert isinstance(json.loads(raw)["amount"], str) and json.loads(raw)["amount"] == str(amount)
+    env.as_(env.client, amount - 1)
+    with pytest.raises(AssertionError, match="value must equal the locked amount"):
+        env.c.fund_engagement("e1")
+    env.fund(value=amount); env.open(); env.submit(); env.mock_docs(); env.llm()
+    assert env.adjudicate()["outcome"] == "DELIVERED"
+    env.as_(env.contractor)
+    out = json.loads(env.c.release_payment("e1"))
+    assert out["released"] == str(amount)
+    assert env.transfers == [(hexaddr(env.contractor), amount, "finalized")]
+    e = env.eng()
+    assert e["amount"] == str(amount) and e["contractor_receipt"] == str(amount) and e["client_receipt"] == "0"
+
+
+@pytest.mark.parametrize("amount", BIG_AMOUNTS)
+def test_large_amounts_are_exact_through_reclaim(env, amount):
+    env.create(amount=amount); env.fund(value=amount)
+    env.as_(env.client)
+    out = json.loads(env.c.reclaim_funds("e1"))
+    assert out["reclaimed"] == str(amount)
+    assert env.transfers == [(hexaddr(env.client), amount, "finalized")]
+    assert env.eng()["client_receipt"] == str(amount)
+
+
+@pytest.mark.parametrize("amount", [2 ** 53 + 1, MAX_AMOUNT - 1, MAX_AMOUNT])
+def test_large_amounts_split_exactly_on_recovery_and_on_default(env, amount):
+    env.create(amount=amount); env.fund(value=amount); env.open(); env.submit()
+    set_time(iso(env.eng()["last_submitted_at"] + TIMEOUT + 1))
+    env.as_(env.other)
+    out = json.loads(env.c.recover_unadjudicated("e1"))
+    assert out["to_contractor"] == str(amount // 2) and out["to_client"] == str(amount - amount // 2)
+    assert [v for _, v, _ in env.transfers] == [amount // 2, amount - amount // 2]
+    assert sum(v for _, v, _ in env.transfers) == amount
+    e = env.eng()
+    assert e["contractor_receipt"] == str(amount // 2) and e["client_receipt"] == str(amount - amount // 2)
+
+
+def test_large_amount_pays_the_contractor_in_full_on_client_default(env):
+    amount = MAX_AMOUNT
+    env.create(amount=amount); env.fund(value=amount); env.open(); env.submit(); mock_client_docs_missing(env)
+    env.adjudicate()
+    set_time(iso(env.eng()["held_since"] + GRACE))
+    assert env.adjudicate()["outcome"] == "CLIENT_DEFAULT"
+    env.as_(env.contractor)
+    assert json.loads(env.c.release_payment("e1"))["released"] == str(amount)
+    assert env.transfers == [(hexaddr(env.contractor), amount, "finalized")]
+
+
+@pytest.mark.parametrize("amount,match", [(MAX_AMOUNT + 1, "amount out of range"), (0, "amount out of range")])
+def test_amounts_outside_the_permitted_range_are_rejected(env, amount, match):
+    with pytest.raises(AssertionError, match=match):
+        env.create(amount=amount)
+
+
+def test_listing_and_packet_views_never_emit_money_as_json_numbers(env):
+    amount = 2 ** 53 + 1
+    env.create(amount=amount); env.fund(value=amount); env.open(); env.submit(); env.mock_docs(); env.llm()
+    env.adjudicate()
+    assert f'"amount": "{amount}"' in env.c.get_engagement("e1")
+    for field in ("client_receipt", "contractor_receipt"):
+        assert isinstance(env.eng()[field], str)

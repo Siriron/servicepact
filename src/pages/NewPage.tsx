@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Card, Field, Notice, Pending, TxLog } from '@/components/Bits'
 import { ManifestEditor } from '@/components/ManifestEditor'
 import { deployed } from '@/lib/chain'
+import { validAmount } from '@/lib/format'
 import { navigate } from '@/lib/router'
 import { CRITERION_IDS, CRITERION_LABEL, DEFAULT_CRITERIA } from '@/lib/types'
 import type { CriterionId, DocRef } from '@/lib/types'
@@ -19,7 +20,7 @@ export function NewPage({ account }: { account: string | null }) {
   const act = useActions(account)
 
   const submit = async () => {
-    if (!/^\d+$/.test(amount) || amount === '0') { act.setError('Amount must be a positive whole number.'); return }
+    if (!validAmount(amount)) { act.setError('Amount must be a whole number of wei between 1 and 10^24.'); return }
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(deadline)) { act.setError('Deadline must look like 2026-12-31T00:00:00Z (UTC).'); return }
     const ok = await act.writeContract({ label: 'Create engagement', functionName: 'create_engagement', args: [id.trim(), contractor.trim(), BigInt(amount), JSON.stringify(sow), JSON.stringify(chk), JSON.stringify(crit), deadline, BigInt(repairs)] })
     if (ok) navigate(`/engagement/${encodeURIComponent(id.trim())}`)

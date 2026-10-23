@@ -6,6 +6,7 @@ import type { LogEntry } from '@/lib/useActions'
 const TONE: Record<string, string> = {
   DRAFT: 'var(--surface-muted)', FUNDED: 'var(--info-bg)', OPEN: 'var(--info-bg)', SUBMITTED: 'var(--warning-bg)',
   DELIVERED: 'var(--success-bg)', RELEASED: 'var(--success-bg)', REJECTED: 'var(--danger-bg)', RECLAIMED: 'var(--danger-bg)', STALLED: 'var(--stalled-bg)',
+  EVIDENCE_HELD: 'var(--stalled-bg)', CLIENT_DEFAULT: 'var(--success-bg)', RECOVERED: 'var(--info-bg)',
   SATISFIED: 'var(--success-bg)', VIOLATED: 'var(--danger-bg)', UNRESOLVED: 'var(--stalled-bg)',
 }
 export function Chip({ v }: { v: string }) {

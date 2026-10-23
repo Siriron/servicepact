@@ -59,7 +59,7 @@ Who benefits from a false verdict: the contractor from a false `DELIVERED`, the 
 | Equivalence strategy | Exact agreement on every validator-judged criterion status |
 | Criteria count | 6 (frozen at creation): 3 computed by code, 3 judged by validators |
 | Repair budget | Configurable (0 to 3 revisions), 7-day repair window |
-| Direct-mode tests | 100 |
+| Direct-mode tests | 149 |
 | Network | StudioNet (gasless, temporary) |
 | Concept | Escrowed freelance delivery settlement against locked documents |
 | Evidence source | Commit-pinned text files on `raw.githubusercontent.com`, fetched by validators |
@@ -91,7 +91,9 @@ A commit-pinned path cannot change after it is committed to, so content cannot b
 
 </div>
 
-The contract is deployed to StudioNet at [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. Transaction links for the observed runs are in [`docs/deployment.md`](docs/deployment.md#observed-live-runs-studionet-oct-21-2026). On Oct 21 2026 the in-app guide drove live runs on it: three adjudications reached validator consensus (explorer: GenVM SUCCESS, consensus Accepted). 100 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or the deadline and repair-window exits on a live network. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
+**Oct 23 2026 steward fixes (contract changed, redeploy pending).** The steward asked for (1) a neutral recovery path when an engagement stays `SUBMITTED` because adjudication does not finalize, (2) client-controlled SOW or checklist evidence that cannot be withheld for profit, and (3) lossless amounts. These are implemented in `contracts/service_pact.py` and covered by direct-mode tests (see *Steward fixes* below). The address below is the **previous** deployment, which does not have them; none of the three new paths has been run on a live network. Redeploy the contract, set `CONTRACT_ADDRESS` in `src/config/chains.ts`, then the live observations below apply only to the older version.
+
+Previous deployment: StudioNet [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. Transaction links for the observed runs are in [`docs/deployment.md`](docs/deployment.md#observed-live-runs-studionet-oct-21-2026). On Oct 21 2026 the in-app guide drove live runs on it: three adjudications reached validator consensus (explorer: GenVM SUCCESS, consensus Accepted). 149 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or the deadline and repair-window exits on a live network. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
 
 <br/>
 
@@ -186,7 +188,7 @@ DRAFT ──fund──▶ FUNDED ──open──▶ OPEN ──submit──▶ 
 
 <br/>
 
-Other exits: a `FUNDED` engagement can be reclaimed by the client at any time; an `OPEN` engagement with no delivery can be reclaimed once the deadline has passed; a `STALLED` engagement can be reclaimed once the repair budget is used **or** the 7-day repair window ends.
+Other exits: a `SUBMITTED` engagement that is still not adjudicated `3 days` after the delivery was recorded can be recovered by anyone with `recover_unadjudicated` (no-fault 50/50 split, see *Steward fixes*); an `EVIDENCE_HELD` engagement is described there too; a `FUNDED` engagement can be reclaimed by the client at any time; an `OPEN` engagement with no delivery can be reclaimed once the deadline has passed; a `STALLED` engagement can be reclaimed once the repair budget is used **or** the 7-day repair window ends.
 
 ### Storage records
 
@@ -215,7 +217,7 @@ Two on-chain records make up the full engagement:
 
 <br/>
 
-All six must be `SATISFIED` for a `DELIVERED` verdict. Any single `VIOLATED` criterion yields `REJECTED`. Any `UNRESOLVED` criterion (unavailable document, missing marker, ambiguous evidence, malformed model reply) yields `STALLED`. A late first delivery is `VIOLATED` by code, whatever the model says. Every verdict value is traced to a branch that can produce it (`docs/contracts.md`).
+All six must be `SATISFIED` for a `DELIVERED` verdict. Any single `VIOLATED` criterion yields `REJECTED`. If the contractor's work was fetched and bound but a client-controlled document (SOW or checklist) is unavailable, the outcome is `EVIDENCE_HELD`, then `CLIENT_DEFAULT` (never a client refund). Any other `UNRESOLVED` criterion (unavailable work document, missing marker, ambiguous evidence, malformed model reply) yields `STALLED`. A late first delivery is `VIOLATED` by code, whatever the model says. Every verdict value is traced to a branch that can produce it (`docs/contracts.md`).
 
 ### Equivalence strategy
 
@@ -283,6 +285,9 @@ Every path that moves escrowed funds is bounded and tested with the exact amount
 FUNDED                 reclaim_funds()    exact amount to client       state = RECLAIMED
 OPEN (no delivery)     reclaim_funds()    after the deadline           state = RECLAIMED
 DELIVERED              release_payment()  exact amount to contractor   state = RELEASED
+CLIENT_DEFAULT         release_payment()  exact amount to contractor   state = RELEASED
+EVIDENCE_HELD          reclaim_funds()    only after 30 days from first observation  state = RECLAIMED
+SUBMITTED (3 days)     recover_unadjudicated()  anyone; amount//2 to contractor, rest to client  state = RECOVERED
 REJECTED               reclaim_funds()    exact amount to client       state = RECLAIMED
 STALLED (exhausted or window expired)  reclaim_funds()  exact amount to client  state = RECLAIMED
 SUBMITTED              adjudicate_engagement()  callable by anyone, no party can block it
@@ -329,9 +334,19 @@ The tests pin GenVM v0.2.16 (`sdk_version` in every deploy). Unpinned, `genlayer
 
 ---
 
+## Steward fixes (Oct 23 2026)
+
+**1. Neutral recovery when adjudication does not finalize.** If an engagement stays `SUBMITTED` for 3 days after its delivery was recorded, anyone may call `recover_unadjudicated(engagement_id)`. The escrow is split without reading any document, model reply or caller input: `floor(amount / 2)` to the contractor, the remainder to the client; state `RECOVERED`. It is only reachable from `SUBMITTED`, only once, and the clock restarts on every resubmission. Anyone can still adjudicate first, and an adjudication that finalizes wins. Deliberate gap: a party who expects an unfavourable verdict may prefer the split, which is why the timeout is long and adjudication is open to all.
+
+**2. Client-controlled evidence cannot be withheld for profit.** The contractor controls the work documents, the client controls the SOW and checklist. Unavailable work documents still stall (repair, then the client may reclaim). Unavailable SOW or checklist documents no longer stall in the client's favour: when the work was fetched and both markers bind, the result is `EVIDENCE_HELD` and the first observation time is stored. The client cannot reclaim. A later adjudication (anyone) that still cannot fetch them after 3 days gives `CLIENT_DEFAULT`, and the contractor releases the full escrow. Restoring the documents resumes normal judgment and resets the clock. A late first delivery is still `REJECTED`, missing markers or work documents still `STALLED`. If nobody ever triggers the second observation, the client may reclaim after 30 days. Validators compare the exact list of unavailable client documents, not only the statuses. Deliberate gap: a transient outage must be seen twice, 3 days apart, before it can pay the contractor.
+
+**3. Lossless amounts.** Amounts up to 10^24 wei exceed JavaScript's 2^53 safe integer range. `get_engagement` returns `amount`, `client_receipt` and `contractor_receipt` as decimal strings, `release_payment`, `reclaim_funds` and `recover_unadjudicated` return amounts as strings, and the frontend keeps them as strings and `BigInt` (create, fund, display); the form rejects anything outside 1 to 10^24.
+
+The in-app test guide has new scenarios for the withheld SOW and for the recovery path (both need a 3-day wait on a live network; the guide shows when the wait ends).
+
 ## Testing
 
-### Test suite: 100 direct-mode tests that execute the real contract
+### Test suite: 149 direct-mode tests that execute the real contract
 
 <br/>
 
@@ -351,13 +366,16 @@ The tests pin GenVM v0.2.16 (`sdk_version` in every deploy). Unpinned, `genlayer
 | Bounded exits | Funded and never opened; opened and never delivered; budget exhaustion; repair-window expiry |
 | Multi-step flows | Four-revision repair flow ending in payment; first submission time kept across repairs |
 | Replay and rollback | `snapshot`/`revert`; independent engagements; storage-pickling check |
+| Recovery path | Split after the timeout only, exactly once, by anyone; rounding never creates or loses a wei (amounts 1, 2, 1001, 2^53+1, 10^24); impossible from any other state; clock restarts on every resubmission; adjudicating first wins |
+| Withheld client evidence | SOW or checklist (or both) missing: `EVIDENCE_HELD`, client cannot reclaim, no recovery split; second observation after 3 days gives `CLIENT_DEFAULT` and the contractor is paid in full; restoring the documents resumes judgment and resets the clock; late delivery, missing markers, or missing work documents never default; client abandonment exit after 30 days; validator rejects a different unavailable set |
+| Lossless amounts | Every permitted amount (2^53-1, 2^53, 2^53+1, 10^18+1, 123456789012345678901234, 10^24) is a JSON string in views and write results, exact through create, fund, release, reclaim, recovery and default; 0 and 10^24+1 rejected |
 | Time helper | Calendar oracle cases including 2100 not being a leap year; malformed input returns 0 |
 
 </div>
 
 <br/>
 
-Planted bugs (the `status_code` mistake, a validator that skips agreement, a missing timeline check, a century leap-year bug, a wrong payout recipient, a removed STALLED exit) each fail the suite. The tests mock the web and the model; they do not prove real LLM behaviour, real network behaviour or real multi-node timing.
+Planted bugs (the `status_code` mistake, a validator that skips agreement, a missing timeline check, a century leap-year bug, a wrong payout recipient, a removed STALLED exit, amounts returned as numbers, a removed client-evidence hold, a missing recovery timeout, a validator that ignores the unavailable-document list, odd wei assigned to the wrong side) each fail the suite. The tests mock the web and the model; they do not prove real LLM behaviour, real network behaviour or real multi-node timing.
 
 ### Running specific groups
 
@@ -378,7 +396,7 @@ pytest tests -v -k "release or reclaim or exit or stalled" -p no:cacheprovider
 
 ## Deployment
 
-The contract is deployed to StudioNet at [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885) and `CONTRACT_ADDRESS` in `src/config/chains.ts` points to it. To redeploy, follow the steps below and update that constant.
+`CONTRACT_ADDRESS` in `src/config/chains.ts` still points to the previous StudioNet deployment (`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`), which predates the steward fixes. Deploy the current `contracts/service_pact.py` and follow the steps below and update that constant.
 
 ### 1. Lint the contract
 
@@ -494,7 +512,8 @@ LICENSE                              MIT
 | All locked fields frozen before funding | ✅ |
 | Bounded exit on every fund path | ✅ |
 | `genvm-lint check` passes | ✅ |
-| 100 direct tests with the SDK pinned to v0.2.16; planted bugs fail them | ✅ |
+| 149 direct tests with the SDK pinned to v0.2.16; planted bugs fail them | ✅ |
+| Steward fixes (recovery path, withheld client evidence, lossless amounts) | ✅ tests, ⏳ not deployed, not observed live |
 | Live StudioNet deployment | ✅ deployed (constructor finalized) |
 | Live adjudication consensus | ✅ observed (STALLED, repair, DELIVERED; marker replay guard) |
 | Live `release_payment` | ✅ finalized, returned `released: 1`, state RELEASED (recipient balance not checked) |

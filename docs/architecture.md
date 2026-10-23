@@ -23,12 +23,12 @@ The host is not in the Gym Sources catalog. In live StudioNet runs (Oct 21 2026)
 | timeline_compliance | code: first submission time against the locked deadline (late is VIOLATED) |
 | scope_completeness, quality_standard, acceptance_checklist | validators, exact agreement on each status |
 
-Any VIOLATED gives REJECTED; otherwise any UNRESOLVED gives STALLED; otherwise DELIVERED. Model prose (`observed_fact`, `reasoning`) is audit metadata and never feeds the rule.
+Any VIOLATED gives REJECTED; otherwise, if the work was fetched and bound but a client document was unavailable, EVIDENCE_HELD (first observation) or CLIENT_DEFAULT (still unavailable 3 days later); otherwise any UNRESOLVED gives STALLED; otherwise DELIVERED. Model prose (`observed_fact`, `reasoning`) is audit metadata and never feeds the rule.
 
 ## Validator rule
 
-Each validator re-runs the whole evaluation (fetch plus model call) and requires every one of the five leader-produced statuses to equal its own. There is no tolerance band: the statuses are discrete choices and the consequence of a difference (DELIVERED vs STALLED vs REJECTED) is a payout. The leader returns only stable decision fields. A fetch failure or a malformed model reply produces an all-UNRESOLVED result instead of an error, so adjudication always completes.
+Each validator re-runs the whole evaluation (fetch plus model call) and requires every one of the five leader-produced statuses to equal its own. There is no tolerance band: the statuses are discrete choices and the consequence of a difference (DELIVERED vs STALLED vs REJECTED) is a payout. The leader returns only stable decision fields. The leader also returns the sorted list of unavailable client documents and every validator must reproduce it exactly. A fetch failure or a malformed model reply produces an all-UNRESOLVED result instead of an error, so adjudication always completes.
 
 ## State machine
 
-DRAFT, FUNDED, OPEN, SUBMITTED, then DELIVERED (to RELEASED), REJECTED (to RECLAIMED) or STALLED (back to SUBMITTED by resubmission, or to RECLAIMED). FUNDED and OPEN (after the deadline, with no delivery) can also go to RECLAIMED. Every state with escrowed funds has an exit, see `contracts.md`.
+DRAFT, FUNDED, OPEN, SUBMITTED, then DELIVERED (to RELEASED), REJECTED (to RECLAIMED) or STALLED (back to SUBMITTED by resubmission, or to RECLAIMED), EVIDENCE_HELD (adjudicated again, to CLIENT_DEFAULT then RELEASED, or RECLAIMED after 30 days) or SUBMITTED to RECOVERED after 3 days without a finalized adjudication. FUNDED and OPEN (after the deadline, with no delivery) can also go to RECLAIMED. Every state with escrowed funds has an exit, see `contracts.md`.
