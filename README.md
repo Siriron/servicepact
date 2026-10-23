@@ -91,9 +91,9 @@ A commit-pinned path cannot change after it is committed to, so content cannot b
 
 </div>
 
-**Oct 23 2026 steward fixes (contract changed, redeploy pending).** The steward asked for (1) a neutral recovery path when an engagement stays `SUBMITTED` because adjudication does not finalize, (2) client-controlled SOW or checklist evidence that cannot be withheld for profit, and (3) lossless amounts. These are implemented in `contracts/service_pact.py` and covered by direct-mode tests (see *Steward fixes* below). The address below is the **previous** deployment, which does not have them; none of the three new paths has been run on a live network. Redeploy the contract, set `CONTRACT_ADDRESS` in `src/config/chains.ts`, then the live observations below apply only to the older version.
+**Oct 23 2026 steward fixes.** The steward asked for (1) a neutral recovery path when an engagement stays `SUBMITTED` because adjudication does not finalize, (2) client-controlled SOW or checklist evidence that cannot be withheld for profit, and (3) lossless amounts. They are implemented in `contracts/service_pact.py` and covered by direct-mode tests (see *Steward fixes* below). The corrected contract is deployed to StudioNet at [`0x00F2AB76B6345CAA7EEbCB46dcCEC447d91B1370`](https://explorer-studio.genlayer.com/address/0x00F2AB76B6345CAA7EEbCB46dcCEC447d91B1370) and `CONTRACT_ADDRESS` points to it. None of the three new paths has been exercised on a live network yet; the live runs described below were made on the previous deployment.
 
-Previous deployment: StudioNet [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. Transaction links for the observed runs are in [`docs/deployment.md`](docs/deployment.md#observed-live-runs-studionet-oct-21-2026). On Oct 21 2026 the in-app guide drove live runs on it: three adjudications reached validator consensus (explorer: GenVM SUCCESS, consensus Accepted). 149 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or the deadline and repair-window exits on a live network. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
+Previous deployment (before the fixes): StudioNet [`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885); the explorer shows the constructor transaction finalized with GenVM result SUCCESS. Transaction links for the observed runs are in [`docs/deployment.md`](docs/deployment.md#observed-live-runs-studionet-oct-21-2026). On Oct 21 2026 the in-app guide drove live runs on it: three adjudications reached validator consensus (explorer: GenVM SUCCESS, consensus Accepted). 149 tests pass with `pytest tests -q -p no:cacheprovider`, `genvm-lint check` passes, and the frontend type-checks and builds. The tests execute the real contract with the web and the model mocked; they do not prove real LLM behaviour, real network behaviour, real multi-node consensus timing, or the deadline and repair-window exits on a live network. StudioNet is a temporary test network: deployed addresses may not survive resets, so the repository tests are the proof of behaviour, not an address.
 
 <br/>
 
@@ -396,7 +396,7 @@ pytest tests -v -k "release or reclaim or exit or stalled" -p no:cacheprovider
 
 ## Deployment
 
-`CONTRACT_ADDRESS` in `src/config/chains.ts` still points to the previous StudioNet deployment (`0xDFC205f0AB2D2377A898D84A5360A2Baa661F885`), which predates the steward fixes. Deploy the current `contracts/service_pact.py` and follow the steps below and update that constant.
+The current contract is deployed at `0x00F2AB76B6345CAA7EEbCB46dcCEC447d91B1370` and `CONTRACT_ADDRESS` in `src/config/chains.ts` points to it. To redeploy, deploy `contracts/service_pact.py` and follow the steps below and update that constant.
 
 ### 1. Lint the contract
 
@@ -513,7 +513,7 @@ LICENSE                              MIT
 | Bounded exit on every fund path | ✅ |
 | `genvm-lint check` passes | ✅ |
 | 149 direct tests with the SDK pinned to v0.2.16; planted bugs fail them | ✅ |
-| Steward fixes (recovery path, withheld client evidence, lossless amounts) | ✅ tests, ⏳ not deployed, not observed live |
+| Steward fixes (recovery path, withheld client evidence, lossless amounts) | ✅ tests, ✅ deployed to StudioNet, ⏳ not observed live |
 | Live StudioNet deployment | ✅ deployed (constructor finalized) |
 | Live adjudication consensus | ✅ observed (STALLED, repair, DELIVERED; marker replay guard) |
 | Live `release_payment` | ✅ finalized, returned `released: 1`, state RELEASED (recipient balance not checked) |

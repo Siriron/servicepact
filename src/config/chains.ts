@@ -7,8 +7,8 @@ export const STUDIONET = {
   explorerBase: 'https://explorer-studio.genlayer.com',
 } as const
 
-// Deployed to StudioNet (constructor tx finalized, per the explorer).
-export const CONTRACT_ADDRESS: string = '0xDFC205f0AB2D2377A898D84A5360A2Baa661F885'
+// Deployed to StudioNet (Oct 23 2026): contract with the recovery path, client-evidence hold and string amounts.
+export const CONTRACT_ADDRESS: string = '0x00F2AB76B6345CAA7EEbCB46dcCEC447d91B1370'
 
 // Public fixtures used by the in-app test guide (repository + commit that contains evidence/fixtures/*).
 export const FIXTURE_REPO: string = 'Siriron/servicepact'
