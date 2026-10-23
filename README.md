@@ -84,7 +84,7 @@ A commit-pinned path cannot change after it is committed to, so content cannot b
 
 ![Tested](https://img.shields.io/badge/contract%20logic%20in%20direct%20mode-tested-brightgreen?style=flat-square)
 ![Deployed](https://img.shields.io/badge/StudioNet%20deployment-finalized-brightgreen?style=flat-square)
-![Live](https://img.shields.io/badge/live%20adjudication%20consensus-observed-brightgreen?style=flat-square)
+![Live](https://img.shields.io/badge/previous%20contract%20live%20adjudication-observed-brightgreen?style=flat-square)
 ![Payout](https://img.shields.io/badge/release__payment-finalized%20live-brightgreen?style=flat-square)
 ![Reclaim](https://img.shields.io/badge/reclaim%20after%20repair%20exhaustion-finalized%20live-brightgreen?style=flat-square)
 ![Untested](https://img.shields.io/badge/deadline%20and%20window%20exits-untested%20live-yellow?style=flat-square)
@@ -514,10 +514,10 @@ LICENSE                              MIT
 | `genvm-lint check` passes | ✅ |
 | 149 direct tests with the SDK pinned to v0.2.16; planted bugs fail them | ✅ |
 | Steward fixes (recovery path, withheld client evidence, lossless amounts) | ✅ tests, ✅ deployed to StudioNet, ⏳ not observed live |
-| Live StudioNet deployment | ✅ deployed (constructor finalized) |
-| Live adjudication consensus | ✅ observed (STALLED, repair, DELIVERED; marker replay guard) |
-| Live `release_payment` | ✅ finalized, returned `released: 1`, state RELEASED (recipient balance not checked) |
-| Live `reclaim_funds` after repair-budget exhaustion | ✅ STALLED (revision 2 of 2) then RECLAIMED, 1 returned to the client |
+| Live StudioNet deployment (current contract) | ✅ deployed at `0x00F2AB76B6345CAA7EEbCB46dcCEC447d91B1370`, no transactions observed yet |
+| Live adjudication consensus (previous contract only) | ✅ observed (STALLED, repair, DELIVERED; marker replay guard) |
+| Live `release_payment` (previous contract only) | ✅ finalized, returned `released: 1`, state RELEASED (recipient balance not checked) |
+| Live `reclaim_funds` after repair-budget exhaustion (previous contract only) | ✅ STALLED (revision 2 of 2) then RECLAIMED, 1 returned to the client |
 | Live deadline and repair-window exits | ⏳ not yet observed (tests only) |
 
 </div>

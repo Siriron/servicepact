@@ -13,7 +13,9 @@ Previous deployment: `0xDFC205f0AB2D2377A898D84A5360A2Baa661F885` (https://explo
 3. `npm install && npm run build`; deploy `dist` to Vercel (`vercel.json` already rewrites to `index.html`).
 4. (Done.) One adjudication against real commit-pinned files reached consensus. Still to do: observe a payout and a reclaim end to end.
 
-## Observed live runs (StudioNet, Oct 21 2026)
+## Observed live runs on the PREVIOUS contract (0xDFC205f0AB2D2377A898D84A5360A2Baa661F885, StudioNet, Oct 21 2026)
+
+> These transactions were made on the previous deployment, before the Oct 23 steward fixes. They are not runs of the current contract (`0x00F2AB76B6345CAA7EEbCB46dcCEC447d91B1370`). The current contract has not been exercised live yet; its behaviour is proven by the direct-mode tests only.
 
 Driven from the in-app guide; results read from the explorer and the engagement page. All transactions below are GenVM SUCCESS with consensus Accepted unless stated. The DELIVERED adjudication of `g-paid-cua89u` (revision 2, all six criteria SATISFIED) and its repair resubmission are listed on the [contract's explorer page](https://explorer-studio.genlayer.com/address/0xDFC205f0AB2D2377A898D84A5360A2Baa661F885).
 
